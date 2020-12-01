@@ -19,6 +19,29 @@
 * Authored by: Alain M. <alainmh23@gmail.com>
 */
 
+public enum QuickFindResultType {
+    NONE,
+    ITEM,
+    PROJECT,
+    VIEW,
+    LABEL,
+    RECENT,
+    FILTERS
+}
+
+public enum NotificationStyle {
+    NORMAL,
+    ERROR
+}
+
+public enum PaneView {
+    INBOX,
+    TODAY,
+    UPCOMING,
+    COMPLETED,
+    ALLTASKS
+}
+
 public class Planner : Gtk.Application {
     public MainWindow? main_window = null;
 
@@ -27,17 +50,37 @@ public class Planner : Gtk.Application {
     public static Services.Database database;
     public static Services.Todoist todoist;
     public static Services.Notifications notifications;
+    public static Services.EventBus event_bus;
     public static Services.Calendar.CalendarModel calendar_model;
+    public static Services.PluginsManager plugins;
+    // public static Services.Tasks.Store task_store;
 
     public signal void go_view (string type, int64 id, int64 id_2);
 
-    private bool silence = false;
+    private static bool silent = false;
+    private static int64 load_project = 0;
+    private static bool version = false;
+    private static bool clear_database = false;
+    private static string lang = "";
+    
 
-    public Planner () {
-        Object (
-            application_id: "com.github.alainm23.planner",
-            flags: ApplicationFlags.HANDLES_COMMAND_LINE
-        );
+    public const OptionEntry[] PLANNER_OPTIONS = {
+        { "version", 'v', 0, OptionArg.NONE, ref version,
+        "Display version number", null },
+        { "reset-database", 'r', 0, OptionArg.NONE, ref clear_database,
+        "Reset Planner database", null },
+        { "silent", 's', 0, OptionArg.NONE, out silent,
+        "Run the Application in background", null },
+        { "load-project", 'l', 0, OptionArg.INT64, ref load_project,
+        "Open project in separate window", "PROJECT_ID" },
+        { "lang", 'n', 0, OptionArg.STRING, ref lang,
+        "Open Planner in a specific language", "LANG" },
+        { null }
+    };
+
+    construct {
+        application_id = "com.github.alainm23.planner";
+        flags |= ApplicationFlags.HANDLES_OPEN;
 
         // Init internationalization support
         Intl.setlocale (LocaleCategory.ALL, "");
@@ -45,10 +88,6 @@ public class Planner : Gtk.Application {
         Intl.bindtextdomain (Constants.GETTEXT_PACKAGE, langpack_dir);
         Intl.bind_textdomain_codeset (Constants.GETTEXT_PACKAGE, "UTF-8");
         Intl.textdomain (Constants.GETTEXT_PACKAGE);
-
-        //  foreach (var lang in Intl.get_language_names ()) {
-        //      print ("Lang: %s\n".printf (lang));
-        //  }
 
         // Dir to Database
         utils = new Utils ();
@@ -61,6 +100,11 @@ public class Planner : Gtk.Application {
         todoist = new Services.Todoist ();
         notifications = new Services.Notifications ();
         calendar_model = new Services.Calendar.CalendarModel ();
+        event_bus = new Services.EventBus ();
+        plugins = new Services.PluginsManager ();
+        // task_store = new Services.Tasks.Store ();
+
+        add_main_option_entries (PLANNER_OPTIONS);
     }
 
     public static Planner _instance = null;
@@ -74,6 +118,11 @@ public class Planner : Gtk.Application {
     }
 
     protected override void activate () {
+        // Set lang
+        if (lang != "") {
+            GLib.Environment.set_variable ("LANGUAGE", lang, true);
+        }
+        
         if (get_windows ().length () > 0) {
             get_windows ().data.present ();
             get_windows ().data.show_all ();
@@ -82,6 +131,46 @@ public class Planner : Gtk.Application {
             settings.get ("window-position", "(ii)", out x, out y);
             if (x != -1 || y != -1) {
                 get_windows ().data.move (x, y);
+            }
+
+            return;
+        }
+
+        if (version) {
+            print ("%s\n".printf (Constants.VERSION));
+            return;
+        }
+
+        if (clear_database) {
+            print ("%s\n".printf (_("Are you sure you want to reset all?")));
+            print (_("It process removes all stored information without the possibility of undoing it. (y/n): "));
+            string input = stdin.read_line ();
+            
+            if (input == _("y") || input == _("yes") ) {
+                var db_path = Planner.settings.get_string ("database-location-path");
+                if (settings.get_boolean ("database-location-use-default")) {
+                    db_path = Environment.get_user_data_dir () + "/com.github.alainm23.planner/database.db";
+                }
+
+                File db_file = File.new_for_path (db_path);
+                try {
+                    db_file.delete ();
+                } catch (Error err) {
+                    warning (err.message);
+                }
+
+                // Log out Todoist
+                settings.set_string ("todoist-sync-token", "");
+                settings.set_string ("todoist-access-token", "");
+                settings.set_string ("todoist-last-sync", "");
+                settings.set_string ("todoist-user-email", "");
+                settings.set_string ("todoist-user-join-date", "");
+                settings.set_string ("todoist-user-avatar", "");
+                settings.set_string ("todoist-user-image-id", "");
+                settings.set_boolean ("todoist-sync-server", false);
+                settings.set_boolean ("todoist-account", false);
+                settings.set_boolean ("todoist-user-is-premium", false);
+                settings.set_int ("todoist-user-id", 0);
             }
 
             return;
@@ -105,7 +194,16 @@ public class Planner : Gtk.Application {
             main_window.maximize ();
         }
 
-        if (silence == false) {
+        // Open database
+        database.open_database ();
+
+        if (load_project != 0) {
+            var dialog = new Dialogs.Project (database.get_project_by_id (load_project), true);
+            dialog.destroy.connect (Gtk.main_quit);
+            dialog.show_all ();
+        }
+
+        if (silent == false && load_project == 0) {
             main_window.show_all ();
             main_window.present ();
         }
@@ -126,17 +224,20 @@ public class Planner : Gtk.Application {
         default_theme.add_resource_path ("/com/github/alainm23/planner");
 
         utils.apply_theme_changed ();
+        utils.update_font_scale ();
 
         // Set Theme and Icon
         Gtk.Settings.get_default ().set_property ("gtk-icon-theme-name", "elementary");
         Gtk.Settings.get_default ().set_property ("gtk-theme-name", "elementary");
 
         // Path Theme
-        //  if (get_os_info ("PRETTY_NAME") == null || get_os_info ("PRETTY_NAME").index_of ("elementary") == -1) {
+        //  if (utils.is_flatpak ()) {
         //      string CSS = """
         //          window decoration {
         //              box-shadow: none;
-        //              margin: 1px;
+        //              border: 1px solid @decoration_border_color;
+        //              border-radius: 4px;
+        //              margin: 0px;
         //          }
         //      """;
 
@@ -152,183 +253,41 @@ public class Planner : Gtk.Application {
         // Set shortcut
         string quick_add_shortcut = settings.get_string ("quick-add-shortcut");
         if (quick_add_shortcut == "") {
-            quick_add_shortcut = "<Primary>Tab";
+            quick_add_shortcut = "<Super>n";
             settings.set_string ("quick-add-shortcut", quick_add_shortcut);
         }
 
-        utils.set_quick_add_shortcut (quick_add_shortcut);
+        utils.set_quick_add_shortcut (quick_add_shortcut, Planner.settings.get_boolean ("quick-add-enabled"));
 
-        database.open_database ();
+        if (settings.get_string ("version") != Constants.VERSION) {
+            var dialog = new Widgets.WhatsNew ("com.github.alainm23.planner", _("Planner %s is here, with many design improvements, new features, and more.".printf (Constants.VERSION)));
+
+            List<string> list = new List<string> ();
+            list.append (_("Github #577 - Fixed recurring tasks."));
+            list.append (_("Updated translations."));
+            
+            dialog.append_notes (_("Bug fixes and performance improvement"), list, 30);
+
+            dialog.show_all ();
+            dialog.present ();
+
+            // Update the settings so we don't show the same dialog again.
+            settings.set_string ("version", Constants.VERSION);
+        }
     }
     
-    public string get_os_info (string field) {
-        string return_value = "";
-        var file = File.new_for_path ("/etc/os-release");
-        try {
-            var osrel = new Gee.HashMap<string, string> ();
-            var dis = new DataInputStream (file.read ());
-            string line;
-            // Read lines until end of file (null) is reached
-            while ((line = dis.read_line (null)) != null) {
-                var osrel_component = line.split ("=", 2);
-                if (osrel_component.length == 2) {
-                    osrel[osrel_component[0]] = osrel_component[1].replace ("\"", "");
-                }
-            }
-
-            return_value = osrel[field];
-        } catch (Error e) {
-            warning ("Couldn't read os-release file, assuming elementary OS");
-        }
-        
-        return return_value;
-    }
-
-    public override int command_line (ApplicationCommandLine command_line) {
-        bool silence_mode = false;
-        OptionEntry[] options = new OptionEntry [1];
-        options[0] = {
-            "s", 0, 0, OptionArg.NONE,
-            ref silence_mode, "Run without window", null
-        };
-
-        string[] args = command_line.get_arguments ();
-        string[] _args = new string[args.length];
-        for (int i = 0; i < args.length; i++) {
-            _args[i] = args[i];
-        }
-
-        try {
-            var ctx = new OptionContext ();
-            ctx.set_help_enabled (true);
-            ctx.add_main_entries (options, null);
-            unowned string[] tmp = _args;
-            ctx.parse (ref tmp);
-        } catch (OptionError e) {
-            command_line.print ("error: %s\n", e.message);
-            return 0;
-        }
-
-        silence = silence_mode;
-        activate ();
-
-        return 0;
-    }
-
     private void build_shortcuts () {
-        var quit_action = new SimpleAction ("quit", null);
-        set_accels_for_action ("app.quit", {"<Control>q"});
-        quit_action.activate.connect (() => {
-            if (main_window != null) {
-                main_window.destroy ();
-            }
-        });
-
         var show_item = new SimpleAction ("show-item", VariantType.INT64);
         show_item.activate.connect ((parameter) => {
             Planner.instance.main_window.go_item (parameter.get_int64 ());
             activate ();
         });
 
-        var quick_find_action = new SimpleAction ("quick-find", null);
-        set_accels_for_action ("app.quick-find", {"<Control>f"});
-        quick_find_action.activate.connect (() => {
-            main_window.show_quick_find ();
-        });
-
-        var add_task = new SimpleAction ("add-task", null);
-        set_accels_for_action ("app.add-task", {"<Control>n"});
-        add_task.activate.connect (() => {
-            main_window.add_task_action (true);
-        });
-
-        var add_task_first = new SimpleAction ("add-task-first", null);
-        set_accels_for_action ("app.add-task-first", {"<Control><Shift>n"});
-        add_task_first.activate.connect (() => {
-            main_window.add_task_action (false);
-        });
-
-        var sync_manually = new SimpleAction ("sync-manually", null);
-        set_accels_for_action ("app.sync-manually", {"<Control>s"});
-        sync_manually.activate.connect (() => {
-            todoist.sync ();
-        });
-
-        var new_project = new SimpleAction ("new-project", null);
-        set_accels_for_action ("app.new-project", {"<Control><Shift>p"});
-        new_project.activate.connect (() => {
-            main_window.new_project ();
-        });
-
-        var new_area = new SimpleAction ("new-area", null);
-        set_accels_for_action ("app.new-area", {"<Control><Shift>a"});
-        new_area.activate.connect (() => {
-            var area = new Objects.Area ();
-            area.name = _("New area");
-            database.insert_area (area);
-        });
-
-        var new_section = new SimpleAction ("new-section", null);
-        set_accels_for_action ("app.new-section", {"<Control><Shift>s"});
-        new_section.activate.connect (() => {
-            main_window.new_section_action ();
-        });
-
-        var view_inbox = new SimpleAction ("view-inbox", null);
-        set_accels_for_action ("app.view-inbox", {"<Control>1"});
-        view_inbox.activate.connect (() => {
-            main_window.go_view (0);
-        });
-
-        var view_today = new SimpleAction ("view-today", null);
-        set_accels_for_action ("app.view-today", {"<Control>2"});
-        view_today.activate.connect (() => {
-            main_window.go_view (1);
-        });
-
-        var view_upcoming = new SimpleAction ("view-upcoming", null);
-        set_accels_for_action ("app.view-upcoming", {"<Control>3"});
-        view_upcoming.activate.connect (() => {
-            main_window.go_view (2);
-        });
-
-        var hide_item = new SimpleAction ("hide-item", null);
-        set_accels_for_action ("app.hide-item", {"Escape"});
-        hide_item.activate.connect (() => {
-            main_window.hide_item ();
-        });
-
-        //  var open_settings = new SimpleAction ("open-settings", null);
-        //  set_accels_for_action ("app.open-settings", {"<Control>p"});
-        //  open_settings.activate.connect (() => {
-        //      var dialog = new Dialogs.Preferences.Preferences ();
-        //      dialog.destroy.connect (Gtk.main_quit);
-        //      dialog.show_all ();
-        //  });
-
-        add_action (quit_action);
         add_action (show_item);
-        add_action (quick_find_action);
-        add_action (add_task);
-        add_action (add_task_first);
-        add_action (sync_manually);
-        add_action (new_project);
-        add_action (new_area);
-        add_action (new_section);
-        add_action (view_inbox);
-        add_action (view_today);
-        add_action (view_upcoming);
-        add_action (hide_item);
-        // add_action (open_settings);
     }
 
     public static int main (string[] args) {
         Planner app = Planner.instance;
-
-        if (args.length > 1 && args[1] == "--s") {
-            app.silence = true;
-        }
-
         return app.run (args);
     }
 }

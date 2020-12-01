@@ -43,7 +43,7 @@ public class Widgets.LabelRow : Gtk.ListBoxRow {
     private const int SCROLL_STEP_SIZE = 5;
     private const int SCROLL_DISTANCE = 30;
     private const int SCROLL_DELAY = 50;
-
+    private bool entry_menu_opened = false;
     private const Gtk.TargetEntry[] TARGET_ENTRIES_LABEL = {
         {"LABELROW", Gtk.TargetFlags.SAME_APP, 0}
     };
@@ -188,8 +188,18 @@ public class Widgets.LabelRow : Gtk.ListBoxRow {
         });
 
         name_entry.focus_out_event.connect (() => {
-            name_stack.visible_child_name = "name_label";
+            if (entry_menu_opened == false) {
+                name_stack.visible_child_name = "name_label";
+            }
+            
             return false;
+        });
+
+        name_entry.populate_popup.connect ((menu) => {
+            entry_menu_opened = true;
+            menu.hide.connect (() => {
+                entry_menu_opened = false;
+            });
         });
 
         Planner.database.label_deleted.connect ((l) => {
@@ -198,7 +208,7 @@ public class Widgets.LabelRow : Gtk.ListBoxRow {
 
                 Timeout.add (500, () => {
                     destroy ();
-                    return false;
+                    return GLib.Source.REMOVE;
                 });
             }
         });

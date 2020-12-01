@@ -26,7 +26,7 @@ public class Widgets.NewCheck : Gtk.EventBox {
     public int is_todoist { get; construct; }
     public int64 temp_id_mapping {get; set; default = 0; }
 
-    private Gtk.Entry name_entry;
+    private Widgets.Entry name_entry;
     private Gtk.Revealer revealer;
 
     public bool reveal_child {
@@ -67,7 +67,7 @@ public class Widgets.NewCheck : Gtk.EventBox {
         checked_button.get_style_context ().add_class ("checklist-check");
         checked_button.valign = Gtk.Align.CENTER;
 
-        name_entry = new Gtk.Entry ();
+        name_entry = new Widgets.Entry ();
         name_entry.hexpand = true;
         name_entry.margin_start = 6;
         name_entry.placeholder_text = _("Subtask name");
@@ -105,8 +105,8 @@ public class Widgets.NewCheck : Gtk.EventBox {
 
         name_entry.focus_out_event.connect (() => {
             if (name_entry.text != "") {
-                //insert_item ();
-                //reveal_child = false;
+                // insert_item ();
+                // reveal_child = false;
             } else {
                 name_entry.text = "";
                 reveal_child = false;
@@ -152,12 +152,11 @@ public class Widgets.NewCheck : Gtk.EventBox {
 
             if (is_todoist == 0) {
                 item.id = Planner.utils.generate_id ();
-
                 if (Planner.database.insert_item (item)) {
                     name_entry.text = "";
                 }
             } else {
-                Planner.todoist.add_item (item, 0, false, temp_id_mapping);
+                Planner.todoist.add_item (item, 0, temp_id_mapping);
             }
         }
     }

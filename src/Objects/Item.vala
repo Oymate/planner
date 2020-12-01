@@ -30,18 +30,12 @@ public class Objects.Item : GLib.Object {
     public int64 parent_id { get; set; default = 0; }
     public int priority { get; set; default = 1; }
     public int item_order { get; set; default = 0; }
+    public int day_order { get; set; default = -1; }
     public int checked { get; set; default = 0; }
     public int is_deleted { get; set; default = 0; }
     public int is_todoist { get; set; default = 0; }
-
-    public string _content = "";
-    public string content {
-        get { return _content; }
-        set { _content = value.replace ("&", " "); }
-    }
-
+    public string content { get; set; default = ""; }
     public string note { get; set; default = ""; }
-
     public string due_date { get; set; default = ""; }
     public string due_timezone { get; set; default = ""; }
     public string due_string { get; set; default = ""; }
@@ -58,10 +52,11 @@ public class Objects.Item : GLib.Object {
     public void save () {
         if (timeout_id != 0) {
             Source.remove (timeout_id);
-            timeout_id = 0;
         }
 
         timeout_id = Timeout.add (2500, () => {
+            timeout_id = 0;
+
             this.date_updated = new GLib.DateTime.now_local ().to_string ();
 
             new Thread<void*> ("save_timeout", () => {
@@ -73,19 +68,17 @@ public class Objects.Item : GLib.Object {
                 return null;
             });
 
-            Source.remove (timeout_id);
-            timeout_id = 0;
-            return false;
+            return GLib.Source.REMOVE;
         });
     }
 
     public void save_local () {
         if (timeout_id_2 != 0) {
             Source.remove (timeout_id_2);
-            timeout_id_2 = 0;
         }
 
-        timeout_id_2 = Timeout.add (2500, () => {
+        timeout_id_2 = Timeout.add (250, () => {
+            timeout_id_2 = 0;
             this.date_updated = new GLib.DateTime.now_local ().to_string ();
 
             new Thread<void*> ("save_local_timeout", () => {
@@ -93,17 +86,14 @@ public class Objects.Item : GLib.Object {
 
                 return null;
             });
-
-            Source.remove (timeout_id_2);
-            timeout_id_2 = 0;
-            return false;
+            
+            return GLib.Source.REMOVE;
         });
     }
 
-    public Objects.Item get_duplicate () {
+    public void get_duplicate () {
         var item = new Objects.Item ();
 
-        item.id = Planner.utils.generate_id ();
         item.project_id = project_id;
         item.section_id = section_id;
         item.user_id = user_id;
@@ -121,7 +111,21 @@ public class Objects.Item : GLib.Object {
         item.due_lang = due_lang;
         item.due_is_recurring = due_is_recurring;
 
-        return item;
+        if (is_todoist == 1) {
+            var temp_id_mapping = Planner.utils.generate_id ();
+            Planner.todoist.add_item (item, -1, temp_id_mapping);
+            Planner.notifications.send_undo_notification (
+                _("Duplicating task…"),
+                Planner.utils.build_undo_object ("item_duplicate", "item", temp_id_mapping.to_string (), "", "")
+            );
+        } else {
+            item.id = Planner.utils.generate_id ();
+            if (Planner.database.insert_item (item, -1)) {
+                Planner.notifications.send_notification (
+                    _("Task duplicate")
+                );
+            }
+        }
     }
 
     public void convert_to_project () {
@@ -167,6 +171,9 @@ public class Objects.Item : GLib.Object {
         builder.set_member_name ("content");
         builder.add_string_value (this.content);
 
+        builder.set_member_name ("note");
+        builder.add_string_value (this.note);
+
         builder.set_member_name ("checked");
         builder.add_int_value (this.checked);
 
@@ -198,8 +205,7 @@ public class Objects.Item : GLib.Object {
 
         Gtk.Clipboard.get_default (Planner.instance.main_window.get_display ()).set_text (text, -1);
         Planner.notifications.send_notification (
-            _("The Task was copied to the Clipboard."),
-            "edit-copy-symbolic"
+            _("The Task was copied to the Clipboard.")
         );
     }
 
@@ -216,8 +222,7 @@ public class Objects.Item : GLib.Object {
 
         Gtk.Clipboard.get_default (Planner.instance.main_window.get_display ()).set_text (text, -1);
         Planner.notifications.send_notification (
-            _("The Task was copied to the Clipboard."),
-            "edit-copy-symbolic"
+            _("The Task was copied to the Clipboard.")
         );
     }
 

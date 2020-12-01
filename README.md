@@ -5,7 +5,7 @@
 [![Donate](https://img.shields.io/badge/PayPal-Donate-gray.svg?style=flat&logo=paypal&colorA=0071bb&logoColor=fff)](https://www.paypal.me/alainm23)
 
 <div align="center">
-  <span align="center"> <img width="80" height="70" class="center" src="https://github.com/alainm23/planner/blob/master/data/icons/128/com.github.alainm23.planner.svg" alt="Icon"></span>
+  <span align="center"> <img width="80" height="80" class="center" src="https://github.com/alainm23/planner/blob/master/data/icons/128/com.github.alainm23.planner.svg" alt="Icon"></span>
   <h1 align="center">Planner</h1>
   <h3 align="center">Never worry about forgetting things again</h3>
 </div>
@@ -53,6 +53,34 @@
 ### Fedora
 [elementary-planner](https://src.fedoraproject.org/rpms/elementary-planner) are available in Fedora repos thanks to @tim77.
 * You should install [elementary-theme](https://src.fedoraproject.org/rpms/elementary-theme) and [elementary-icon-theme](https://src.fedoraproject.org/rpms/elementary-icon-theme) to be a complete experience.
+
+## Building
+
+You'll need the following dependencies:
+
+* libgtk-3-dev
+* libgee-0.8-dev
+* libjson-glib-dev
+* libsqlite3-dev
+* libsoup2.4-dev
+* libgranite-dev (>=0.5)
+* libwebkit2gtk-4.0-dev
+* libecal1.2-dev || libecal2.0-dev
+* libedataserver1.2-dev
+* libical-dev
+* meson
+* valac >= 0.40.3
+
+Run `meson build` to configure the build environment. Change to the build directory and run `ninja` to build
+
+    meson build --prefix=/usr
+    cd build
+    ninja
+
+To install, use `ninja install`, then execute with `com.github.alainm23.planner`
+
+    sudo ninja install
+    com.github.alainm23.planner
 
 ## Support
 If you like Planner and you want to support its development, consider supporting via [Patreon](https://www.patreon.com/alainm23) or [PayPal](https://www.paypal.me/alainm23)

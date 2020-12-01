@@ -19,36 +19,25 @@
 * Authored by: Alain M. <alainmh23@gmail.com>
 */
 
-public enum QuickFind_Result_Type {
-    NONE,
-    ITEM,
-    PROJECT,
-    VIEW,
-    LABEL
-}
-
 public class Dialogs.QuickFind : Gtk.Dialog {
+    SearchItem current_item = null;
     public QuickFind () {
         Object (
             transient_for: Planner.instance.main_window,
             deletable: false,
             destroy_with_parent: true,
             window_position: Gtk.WindowPosition.CENTER_ON_PARENT,
-            modal: true,
-            use_header_bar: 1
+            use_header_bar: 1,
+            title: _("Quick Find")
         );
     }
 
     construct {
+        Planner.event_bus.unselect_all ();
+        get_style_context ().add_class ("app");
         get_style_context ().add_class ("quick-find-dialog");
-        // if (get_os_info ("PRETTY_NAME") == null || get_os_info ("PRETTY_NAME").index_of ("elementary") == -1) {
-            // get_style_context ().add_class ("dialog-patch");
-            // width_request = 465;
-            // height_request = 255;
-        // } else {
-            width_request = 575;
-            height_request = 425;
-        // }
+        width_request = 575;
+        height_request = 455;
 
         int window_x, window_y;
         int window_width, width_height;
@@ -87,20 +76,67 @@ public class Dialogs.QuickFind : Gtk.Dialog {
             }
         """.printf (_("Completed")));
 
+        views.add ("""
+            {
+                "name": "%s",
+                "id": 4
+            }
+        """.printf (_("All Tasks")));
+
+        var filters = new Gee.ArrayList<string> ();
+        filters.add ("""
+            {
+                "name": "%s",
+                "keywords": "p1",
+                "filter": "p1"
+            }
+        """.printf (_("Priority 1")));
+
+        filters.add ("""
+            {
+                "name": "%s",
+                "keywords": "p2",
+                "filter": "p2"
+            }
+        """.printf (_("Priority 2")));
+
+        filters.add ("""
+            {
+                "name": "%s",
+                "keywords": "p3",
+                "filter": "p3"
+            }
+        """.printf (_("Priority 3")));
+
+        filters.add ("""
+            {
+                "name": "%s",
+                "keywords": "p4",
+                "filter": "p4"
+            }
+        """.printf (_("None")));
+
+        filters.add ("""
+            {
+                "name": "%s",
+                "keywords": "1d",
+                "filter": "tomorrow"
+            }
+        """.printf (_("Tomorrow")));
+
         get_header_bar ().visible = false;
         get_header_bar ().no_show_all = true;
 
         var search_label = new Gtk.Label (_("Search"));
         search_label.get_style_context ().add_class ("font-weight-600");
-        search_label.get_style_context ().add_class ("welcome");
         search_label.width_request = 90;
         search_label.margin_start = 6;
         search_label.xalign = (float) 0.5;
 
         var search_revealer = new Gtk.Revealer ();
-        search_revealer.reveal_child = false;
         search_revealer.transition_type = Gtk.RevealerTransitionType.SLIDE_LEFT;
         search_revealer.add (search_label);
+        search_revealer.reveal_child = true;
 
         var search_entry = new Gtk.SearchEntry ();
         search_entry.hexpand = true;
@@ -115,9 +151,9 @@ public class Dialogs.QuickFind : Gtk.Dialog {
 
         var placeholder_image = new Gtk.Image ();
         placeholder_image.gicon = new ThemedIcon ("folder-saved-search-symbolic");
-        placeholder_image.pixel_size = 24;
+        placeholder_image.pixel_size = 32;
 
-        var placeholder_label = new Gtk.Label (_("Quickly switch projects and views, find tasks, search by labels, ..."));
+        var placeholder_label = new Gtk.Label (_("Quickly switch projects and views, find tasks, search by labels."));
         placeholder_label.wrap = true;
         placeholder_label.max_width_chars = 32;
         placeholder_label.justify = Gtk.Justification.CENTER;
@@ -127,14 +163,13 @@ public class Dialogs.QuickFind : Gtk.Dialog {
         placeholder_grid.get_style_context ().add_class ("dim-label");
         placeholder_grid.orientation = Gtk.Orientation.VERTICAL;
         placeholder_grid.halign = Gtk.Align.CENTER;
-        placeholder_grid.row_spacing = 9;
-        placeholder_grid.margin_top = 24;
+        placeholder_grid.row_spacing = 12;
+        placeholder_grid.margin_top = 32;
         placeholder_grid.add (placeholder_image);
         placeholder_grid.add (placeholder_label);
         placeholder_grid.show_all ();
 
         var listbox = new Gtk.ListBox ();
-        listbox.get_style_context ().add_class ("background");
         listbox.hexpand = true;
         listbox.set_placeholder (placeholder_grid);
 
@@ -153,6 +188,30 @@ public class Dialogs.QuickFind : Gtk.Dialog {
         main_box.pack_start (listbox_scrolled, true, true, 0);
 
         get_content_area ().add (main_box);
+        
+        var recents = Planner.database.get_quick_find_recents ();
+        for (int i = 0; i < recents.length ; i++) {
+            var row = new SearchItem (
+                QuickFindResultType.RECENT,
+                recents.index (i).split ("___separator___") [1],
+                recents.index (i).split ("___separator___") [0]
+            );
+
+            listbox.add (row);
+        }
+        
+        QuickFindResultType result_type = QuickFindResultType.NONE;
+        listbox.foreach ((widget) => {
+            var row = (SearchItem) widget;
+
+            if (row.result_type != result_type) {
+                row.header_label.opacity = 1;
+            }
+
+            result_type = row.result_type;
+        });
+
+        listbox.show_all ();
 
         search_entry.search_changed.connect (() => {
             listbox.foreach ((widget) => {
@@ -161,12 +220,53 @@ public class Dialogs.QuickFind : Gtk.Dialog {
 
             if (search_entry.text.strip () != "") {
                 search_revealer.reveal_child = true;
+                if (search_entry.text.down () == _("Labels").down ()) {
+                    foreach (var label in Planner.database.get_all_labels ()) {
+                        var row = new SearchItem (
+                            QuickFindResultType.LABEL,
+                            label.to_json (),
+                            search_entry.text
+                        );
+    
+                        listbox.add (row);
+                        listbox.show_all ();
+                    }
+                }
+
+                if (search_entry.text.down () == _("Projects").down ()) {
+                    foreach (var project in Planner.database.get_all_projects ()) {
+                        if (project.inbox_project == 0) {
+                            var row = new SearchItem (
+                                QuickFindResultType.PROJECT,
+                                project.to_json (),
+                                search_entry.text
+                            );
+    
+                            listbox.add (row);
+                            listbox.show_all ();
+                        }
+                    }
+                }
 
                 foreach (string view in views) {
                     if (search_entry.text.down () in Planner.todoist.get_string_member_by_object (view, "name").down ()) {
                         var row = new SearchItem (
-                            QuickFind_Result_Type.VIEW,
+                            QuickFindResultType.VIEW,
                             view,
+                            search_entry.text
+                        );
+
+                        listbox.add (row);
+                        listbox.show_all ();
+                    }
+                }
+
+                foreach (string priority in filters) {
+                    if (search_entry.text.down () in Planner.todoist.get_string_member_by_object (priority, "name").down () ||
+                    search_entry.text.down () in Planner.todoist.get_string_member_by_object (priority, "keywords").down ()) {
+                        var row = new SearchItem (
+                            QuickFindResultType.FILTERS,
+                            priority,
                             search_entry.text
                         );
 
@@ -178,7 +278,7 @@ public class Dialogs.QuickFind : Gtk.Dialog {
                 foreach (var project in Planner.database.get_all_projects_by_search (search_entry.text)) {
                     if (project.inbox_project == 0) {
                         var row = new SearchItem (
-                            QuickFind_Result_Type.PROJECT,
+                            QuickFindResultType.PROJECT,
                             project.to_json (),
                             search_entry.text
                         );
@@ -190,7 +290,7 @@ public class Dialogs.QuickFind : Gtk.Dialog {
 
                 foreach (var label in Planner.database.get_labels_by_search (search_entry.text)) {
                     var row = new SearchItem (
-                        QuickFind_Result_Type.LABEL,
+                        QuickFindResultType.LABEL,
                         label.to_json (),
                         search_entry.text
                     );
@@ -201,7 +301,7 @@ public class Dialogs.QuickFind : Gtk.Dialog {
 
                 foreach (var item in Planner.database.get_items_by_search (search_entry.text)) {
                     var row = new SearchItem (
-                        QuickFind_Result_Type.ITEM,
+                        QuickFindResultType.ITEM,
                         item.to_json (),
                         search_entry.text
                     );
@@ -210,7 +310,7 @@ public class Dialogs.QuickFind : Gtk.Dialog {
                     listbox.show_all ();
                 }
 
-                QuickFind_Result_Type result_type = QuickFind_Result_Type.NONE;
+                result_type = QuickFindResultType.NONE;
                 listbox.foreach ((widget) => {
                     var row = (SearchItem) widget;
 
@@ -225,7 +325,7 @@ public class Dialogs.QuickFind : Gtk.Dialog {
             }
         });
 
-        this.key_release_event.connect ((key) => {
+        key_release_event.connect ((key) => {
             if (key.keyval == 65307) {
                 popdown ();
             }
@@ -233,15 +333,13 @@ public class Dialogs.QuickFind : Gtk.Dialog {
             return false;
         });
 
-        this.focus_out_event.connect (() => {
-            if (search_entry.text == "") {
-                // popdown ();
-            }
+        focus_out_event.connect (() => {
+            popdown ();
 
             return false;
         });
 
-        this.key_press_event.connect ((event) => {
+        key_press_event.connect ((event) => {
             var key = Gdk.keyval_name (event.keyval).replace ("KP_", "");
 
             if (key == "Up" || key == "Down") {
@@ -264,27 +362,73 @@ public class Dialogs.QuickFind : Gtk.Dialog {
         listbox.row_activated.connect ((row) => {
             row_activated (row);
         });
+
+        listbox.row_selected.connect ((row) => {
+            if (row != null) {    
+                var item = (SearchItem) row;
+                item.shortcut_revealer.reveal_child = true;
+                if (current_item != null) {
+                    current_item.shortcut_revealer.reveal_child = false;
+                }
+                current_item = item;
+            }
+        });
     }
 
     private void row_activated (Gtk.ListBoxRow row) {
         var item = (SearchItem) row;
 
-        if (item.result_type == QuickFind_Result_Type.PROJECT) {
+        if (item.result_type == QuickFindResultType.PROJECT) {
+            Planner.database.insert_quickfind_recents ("PROJECT", item.object);
             Planner.instance.main_window.go_project (
                 Planner.todoist.get_int_member_by_object (item.object, "id")
             );
-        } else if (item.result_type == QuickFind_Result_Type.VIEW) {
+        } else if (item.result_type == QuickFindResultType.VIEW) {
+            Planner.database.insert_quickfind_recents ("VIEW", item.object);
             Planner.instance.main_window.go_view (
-                (int32) Planner.todoist.get_int_member_by_object (item.object, "id")
+                Planner.utils.get_paneview_by_enum (
+                    (int32) Planner.todoist.get_int_member_by_object (item.object, "id")
+                )
             );
-        } else if (item.result_type == QuickFind_Result_Type.ITEM) {
+        } else if (item.result_type == QuickFindResultType.ITEM) {
+            Planner.database.insert_quickfind_recents ("ITEM", item.object);
             Planner.instance.main_window.go_item (
                 Planner.todoist.get_int_member_by_object (item.object, "id")
             );
-        } else if (item.result_type == QuickFind_Result_Type.LABEL) {
+        } else if (item.result_type == QuickFindResultType.LABEL) {
+            Planner.database.insert_quickfind_recents ("LABEL", item.object);
             Planner.instance.main_window.go_label (
                 Planner.todoist.get_int_member_by_object (item.object, "id")
             );
+        } else if (item.result_type == QuickFindResultType.FILTERS) {
+            Planner.database.insert_quickfind_recents ("FILTERS", item.object);
+            Planner.instance.main_window.go_filter (
+                Planner.todoist.get_string_member_by_object (item.object, "filter")
+            );
+        } else if (item.result_type == QuickFindResultType.RECENT) {
+            if (item.search_term == "PROJECT") {
+                Planner.instance.main_window.go_project (
+                    Planner.todoist.get_int_member_by_object (item.object, "id")
+                );
+            } else if (item.search_term == "VIEW") {
+                Planner.instance.main_window.go_view (
+                    Planner.utils.get_paneview_by_enum (
+                        (int32) Planner.todoist.get_int_member_by_object (item.object, "id")
+                    )
+                );
+            } else if (item.search_term == "ITEM") {
+                Planner.instance.main_window.go_item (
+                    Planner.todoist.get_int_member_by_object (item.object, "id")
+                );
+            } else if (item.search_term == "LABEL") {
+                Planner.instance.main_window.go_label (
+                    Planner.todoist.get_int_member_by_object (item.object, "id")
+                );
+            } else if (item.search_term == "FILTERS") {
+                Planner.instance.main_window.go_filter (
+                    Planner.todoist.get_string_member_by_object (item.object, "filter")
+                );
+            }
         }
 
         popdown ();
@@ -295,19 +439,20 @@ public class Dialogs.QuickFind : Gtk.Dialog {
 
         Timeout.add (500, () => {
             destroy ();
-            return false;
+            return GLib.Source.REMOVE;
         });
     }
 }
 
 public class SearchItem : Gtk.ListBoxRow {
-    public QuickFind_Result_Type result_type { get; construct set; }
+    public QuickFindResultType result_type { get; construct set; }
 
     public Gtk.Label header_label;
+    public Gtk.Revealer shortcut_revealer;
     public string object { get; construct; }
     public string search_term { get; construct; }
 
-    public SearchItem (QuickFind_Result_Type result_type, string object, string search_term) {
+    public SearchItem (QuickFindResultType result_type, string object, string search_term) {
         Object (
             result_type: result_type,
             object: object,
@@ -317,15 +462,109 @@ public class SearchItem : Gtk.ListBoxRow {
 
     construct {
         get_style_context ().add_class ("searchitem-row");
-        if (result_type == QuickFind_Result_Type.ITEM) {
+        var shortcut_label = new Gtk.Label ("<small>%s</small>".printf (_("Enter")));
+        shortcut_label.get_style_context ().add_class ("keycap");
+        shortcut_label.use_markup = true;
+        shortcut_label.valign = Gtk.Align.CENTER;
+
+        shortcut_revealer = new Gtk.Revealer ();
+        shortcut_revealer.reveal_child = false;
+        shortcut_revealer.halign = Gtk.Align.END;
+        shortcut_revealer.hexpand = true;
+        shortcut_revealer.transition_type = Gtk.RevealerTransitionType.SLIDE_LEFT;
+        shortcut_revealer.add (shortcut_label);
+        shortcut_revealer.reveal_child = false;
+
+        if (result_type == QuickFindResultType.ITEM) {
             header_label = new Gtk.Label (_("Tasks"));
-            header_label.get_style_context ().add_class ("welcome");
             header_label.get_style_context ().add_class ("font-weight-600");
             header_label.width_request = 73;
             header_label.xalign = 1;
             header_label.margin_end = 29;
             header_label.opacity = 0;
 
+            var main_grid = new Gtk.Grid ();
+            main_grid.attach (header_label, 0, 0, 1, 1);
+            main_grid.attach (new Gtk.Separator (Gtk.Orientation.VERTICAL), 1, 0, 1, 1);
+            main_grid.attach (get_quick_find_result ("ITEM"), 2, 0, 1, 1);
+
+            add (main_grid);
+        } else if (result_type == QuickFindResultType.PROJECT) {
+            header_label = new Gtk.Label (_("Projects"));
+            header_label.get_style_context ().add_class ("font-weight-600");
+            header_label.width_request = 73;
+            header_label.xalign = 1;
+            header_label.margin_end = 29;
+            header_label.opacity = 0;
+
+            var main_grid = new Gtk.Grid ();
+            main_grid.attach (header_label, 0, 0, 1, 1);
+            main_grid.attach (new Gtk.Separator (Gtk.Orientation.VERTICAL), 1, 0, 1, 1);
+            main_grid.attach (get_quick_find_result ("PROJECT"), 2, 0, 1, 1);
+
+            add (main_grid);
+        } else if (result_type == QuickFindResultType.VIEW) {
+            header_label = new Gtk.Label (_("Views"));
+            header_label.get_style_context ().add_class ("font-weight-600");
+            header_label.width_request = 73;
+            header_label.xalign = 1;
+            header_label.margin_end = 29;
+            header_label.opacity = 0;
+
+            var main_grid = new Gtk.Grid ();
+            main_grid.attach (header_label, 0, 0, 1, 1);
+            main_grid.attach (new Gtk.Separator (Gtk.Orientation.VERTICAL), 1, 0, 1, 1);
+            main_grid.attach (get_quick_find_result ("VIEW"), 2, 0, 1, 1);
+
+            add (main_grid);
+        } else if (result_type == QuickFindResultType.LABEL) {
+            header_label = new Gtk.Label (_("Labels"));
+            header_label.get_style_context ().add_class ("font-weight-600");
+            header_label.width_request = 73;
+            header_label.xalign = 1;
+            header_label.margin_end = 29;
+            header_label.opacity = 0;
+
+            var main_grid = new Gtk.Grid ();
+            main_grid.attach (header_label, 0, 0, 1, 1);
+            main_grid.attach (new Gtk.Separator (Gtk.Orientation.VERTICAL), 1, 0, 1, 1);
+            main_grid.attach (get_quick_find_result ("LABEL"), 2, 0, 1, 1);
+
+            add (main_grid);
+        } else if (result_type == QuickFindResultType.FILTERS) {
+            header_label = new Gtk.Label (_("Filters"));
+            header_label.get_style_context ().add_class ("font-weight-600");
+            header_label.width_request = 73;
+            header_label.xalign = 1;
+            header_label.margin_end = 29;
+            header_label.opacity = 0;
+
+            var main_grid = new Gtk.Grid ();
+            main_grid.attach (header_label, 0, 0, 1, 1);
+            main_grid.attach (new Gtk.Separator (Gtk.Orientation.VERTICAL), 1, 0, 1, 1);
+            main_grid.attach (get_quick_find_result ("FILTERS"), 2, 0, 1, 1);
+
+            add (main_grid);
+        } else if (result_type == QuickFindResultType.RECENT) {
+            header_label = new Gtk.Label (_("Recents"));
+            header_label.get_style_context ().add_class ("font-weight-600");
+            header_label.width_request = 73;
+            header_label.xalign = 1;
+            header_label.margin_end = 29;
+            header_label.opacity = 0;
+
+            var main_grid = new Gtk.Grid ();
+            main_grid.attach (header_label, 0, 0, 1, 1);
+            main_grid.attach (new Gtk.Separator (Gtk.Orientation.VERTICAL), 1, 0, 1, 1);
+            main_grid.attach (get_quick_find_result (search_term), 2, 0, 1, 1);
+
+            add (main_grid);
+        }
+    }
+
+    private Gtk.Widget get_quick_find_result (string object_type) {
+        Gtk.Widget? returned = null;
+        if (object_type == "ITEM") {
             var checked_button = new Gtk.CheckButton ();
             checked_button.valign = Gtk.Align.CENTER;
             checked_button.get_style_context ().add_class ("checklist-button");
@@ -336,33 +575,41 @@ public class SearchItem : Gtk.ListBoxRow {
                     search_term
                 )
             );
-            content_label.wrap = true;
+            content_label.ellipsize = Pango.EllipsizeMode.END;
             content_label.xalign = 0;
             content_label.use_markup = true;
+            content_label.tooltip_text = Planner.todoist.get_string_member_by_object (object, "content");
 
             var grid = new Gtk.Grid ();
-            grid.margin = 6;
+            grid.margin = 3;
+            grid.margin_start = 6;
+            grid.margin_end = 6;
             grid.column_spacing = 6;
-            grid.add (checked_button);
-            grid.add (content_label);
+            if (Planner.todoist.get_string_member_by_object (object, "note") != "") {
+                var note_label = new Gtk.Label (
+                    markup_string_with_search (
+                        Planner.todoist.get_string_member_by_object (object, "note"),
+                        search_term
+                    )
+                );
+                note_label.ellipsize = Pango.EllipsizeMode.END;
+                note_label.xalign = 0;
+                note_label.use_markup = true;
+    
+                grid.attach (checked_button, 0, 0, 1, 1);
+                grid.attach (content_label, 1, 0, 1, 1);
+                grid.attach (shortcut_revealer, 2, 0, 1, 1);
+                grid.attach (note_label, 1, 1, 1, 1);
+            } else {
+                grid.add (checked_button);
+                grid.add (content_label);
+                grid.add (shortcut_revealer);
+            }
 
-            var main_grid = new Gtk.Grid ();
-            main_grid.attach (header_label, 0, 0, 1, 1);
-            main_grid.attach (new Gtk.Separator (Gtk.Orientation.VERTICAL), 1, 0, 1, 1);
-            main_grid.attach (grid, 2, 0, 1, 1);
-
-            add (main_grid);
-        } else if (result_type == QuickFind_Result_Type.PROJECT) {
-            header_label = new Gtk.Label (_("Projects"));
-            header_label.get_style_context ().add_class ("welcome");
-            header_label.get_style_context ().add_class ("font-weight-600");
-            header_label.width_request = 73;
-            header_label.xalign = 1;
-            header_label.margin_end = 29;
-            header_label.opacity = 0;
-
-            var project_progress = new Widgets.ProjectProgress ();
-            project_progress.margin = 2;
+            returned = grid;
+        } else if (object_type == "PROJECT") {
+            var project_progress = new Widgets.ProjectProgress (10);
+            project_progress.margin = 1;
             project_progress.line_width = 0;
             project_progress.valign = Gtk.Align.CENTER;
             project_progress.halign = Gtk.Align.CENTER;
@@ -389,32 +636,22 @@ public class SearchItem : Gtk.ListBoxRow {
                     search_term
                 )
             );
-            content_label.wrap = true;
+            content_label.ellipsize = Pango.EllipsizeMode.END;
             content_label.xalign = 0;
             content_label.use_markup = true;
+            content_label.tooltip_text = Planner.todoist.get_string_member_by_object (object, "name");
 
             var grid = new Gtk.Grid ();
-            grid.margin = 6;
+            grid.margin = 3;
             grid.margin_start = 6;
+            grid.margin_end = 6;
             grid.column_spacing = 6;
             grid.add (progress_grid);
             grid.add (content_label);
+            grid.add (shortcut_revealer);
 
-            var main_grid = new Gtk.Grid ();
-            main_grid.attach (header_label, 0, 0, 1, 1);
-            main_grid.attach (new Gtk.Separator (Gtk.Orientation.VERTICAL), 1, 0, 1, 1);
-            main_grid.attach (grid, 2, 0, 1, 1);
-
-            add (main_grid);
-        } else if (result_type == QuickFind_Result_Type.VIEW) {
-            header_label = new Gtk.Label (_("Views"));
-            header_label.get_style_context ().add_class ("welcome");
-            header_label.get_style_context ().add_class ("font-weight-600");
-            header_label.width_request = 73;
-            header_label.xalign = 1;
-            header_label.margin_end = 29;
-            header_label.opacity = 0;
-
+            returned = grid;
+        } else if (object_type == "VIEW") {
             var icon = new Gtk.Image ();
             icon.halign = Gtk.Align.CENTER;
             icon.valign = Gtk.Align.CENTER;
@@ -433,6 +670,9 @@ public class SearchItem : Gtk.ListBoxRow {
             } else if (Planner.todoist.get_int_member_by_object (object, "id") == 3) {
                 icon.gicon = new ThemedIcon ("emblem-default-symbolic");
                 icon.get_style_context ().add_class ("completed-icon");
+            } else if (Planner.todoist.get_int_member_by_object (object, "id") == 4) {
+                icon.gicon = new ThemedIcon ("emblem-ok-symbolic");
+                icon.get_style_context ().add_class ("all-tasks-icon");
             }
 
             var content_label = new Gtk.Label (
@@ -441,32 +681,20 @@ public class SearchItem : Gtk.ListBoxRow {
                     search_term
                 )
             );
-            content_label.wrap = true;
+            content_label.ellipsize = Pango.EllipsizeMode.END;
             content_label.xalign = 0;
             content_label.use_markup = true;
 
             var grid = new Gtk.Grid ();
-            grid.margin = 6;
+            grid.margin = 3;
             grid.margin_start = 5;
             grid.column_spacing = 5;
             grid.add (icon);
             grid.add (content_label);
+            grid.add (shortcut_revealer);
 
-            var main_grid = new Gtk.Grid ();
-            main_grid.attach (header_label, 0, 0, 1, 1);
-            main_grid.attach (new Gtk.Separator (Gtk.Orientation.VERTICAL), 1, 0, 1, 1);
-            main_grid.attach (grid, 2, 0, 1, 1);
-
-            add (main_grid);
-        } else if (result_type == QuickFind_Result_Type.LABEL) {
-            header_label = new Gtk.Label (_("Labels"));
-            header_label.get_style_context ().add_class ("welcome");
-            header_label.get_style_context ().add_class ("font-weight-600");
-            header_label.width_request = 73;
-            header_label.xalign = 1;
-            header_label.margin_end = 29;
-            header_label.opacity = 0;
-
+            returned = grid;
+        } else if (object_type == "LABEL") {
             var icon = new Gtk.Image ();
             icon.halign = Gtk.Align.CENTER;
             icon.valign = Gtk.Align.CENTER;
@@ -482,24 +710,70 @@ public class SearchItem : Gtk.ListBoxRow {
                     search_term
                 )
             );
-            content_label.wrap = true;
+            content_label.ellipsize = Pango.EllipsizeMode.END;
             content_label.xalign = 0;
             content_label.use_markup = true;
             content_label.margin_bottom = 1;
+            content_label.tooltip_text = Planner.todoist.get_string_member_by_object (object, "name");
 
             var grid = new Gtk.Grid ();
-            grid.margin = 6;
+            grid.margin = 3;
+            grid.margin_start = 6;
+            grid.margin_end = 6;
             grid.column_spacing = 6;
             grid.add (icon);
             grid.add (content_label);
+            grid.add (shortcut_revealer);
 
-            var main_grid = new Gtk.Grid ();
-            main_grid.attach (header_label, 0, 0, 1, 1);
-            main_grid.attach (new Gtk.Separator (Gtk.Orientation.VERTICAL), 1, 0, 1, 1);
-            main_grid.attach (grid, 2, 0, 1, 1);
+            returned = grid;
+        } else if (object_type == "FILTERS") {
+            var icon = new Gtk.Image ();
+            icon.halign = Gtk.Align.CENTER;
+            icon.valign = Gtk.Align.CENTER;
+            icon.pixel_size = 16;
 
-            add (main_grid);
+            if (Planner.todoist.get_string_member_by_object (object, "filter") == "p4") {
+                if (Planner.settings.get_enum ("appearance") == 0) {
+                    icon.gicon = new ThemedIcon ("flag-outline-light");
+                } else {
+                    icon.gicon = new ThemedIcon ("flag-outline-dark");
+                }
+            } else if (Planner.todoist.get_string_member_by_object (object, "filter") == "p3") {
+                icon.gicon = new ThemedIcon ("priority-2");
+            } else if (Planner.todoist.get_string_member_by_object (object, "filter") == "p2") {
+                icon.gicon = new ThemedIcon ("priority-3");
+            } else if (Planner.todoist.get_string_member_by_object (object, "filter") == "p1") {
+                icon.gicon = new ThemedIcon ("priority-4");
+            } else if (Planner.todoist.get_string_member_by_object (object, "filter") == "tomorrow") {
+                icon.gicon = new ThemedIcon ("x-office-calendar-symbolic");
+                icon.get_style_context ().add_class ("upcoming-icon");
+                icon.margin_start = 1;
+                icon.pixel_size = 12;
+            }
+
+            var content_label = new Gtk.Label (
+                markup_string_with_search (
+                    Planner.todoist.get_string_member_by_object (object, "name"),
+                    search_term
+                )
+            );
+            content_label.ellipsize = Pango.EllipsizeMode.END;
+            content_label.xalign = 0;
+            content_label.use_markup = true;
+
+            var grid = new Gtk.Grid ();
+            grid.margin = 3;
+            grid.margin_start = 5;
+            grid.margin_end = 6;
+            grid.column_spacing = 5;
+            grid.add (icon);
+            grid.add (content_label);
+            grid.add (shortcut_revealer);
+
+            returned = grid;
         }
+
+        return returned;
     }
 
     private static string markup_string_with_search (string text, string pattern) {
@@ -598,10 +872,8 @@ namespace Synapse {
 
         PLACES = 1 << 8,
 
-        // FIXME: shouldn't this be FILES | INCLUDE_REMOTE?
         INTERNET = 1 << 9,
 
-        // FIXME: Text Query flag? kinda weird, why do we have this here?
         TEXT = 1 << 10,
 
         CONTACTS = 1 << 11,
@@ -693,7 +965,6 @@ namespace Synapse {
                     results[re] = Match.Score.GOOD;
                 } catch (RegexError err) { }
 
-                // FIXME: do something generic here
                 if (!(MatcherFlags.NO_REVERSED in match_flags)) {
                     if (escaped_words.length == 2) {
                         var reversed = "\\b(%s)".printf (
@@ -761,7 +1032,7 @@ namespace Synapse {
 
             var sorted_results = new Gee.ArrayList<Gee.Map.Entry<Regex, int>> ();
             var entries = results.entries;
-            // FIXME: why it doesn't work without this?
+
             sorted_results.set_data ("entries-ref", entries);
             sorted_results.add_all (entries);
             sorted_results.sort ((a, b) => {

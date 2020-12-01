@@ -24,7 +24,7 @@ public class Widgets.CheckRow : Gtk.ListBoxRow {
 
     private Gtk.CheckButton checked_button;
     private Gtk.Label content_label;
-    private Gtk.Entry content_entry;
+    private Widgets.Entry content_entry;
     private Gtk.Stack content_stack;
     private Gtk.Revealer motion_revealer;
     private Gtk.Separator drag_separator;
@@ -53,15 +53,14 @@ public class Widgets.CheckRow : Gtk.ListBoxRow {
         checked_button.can_focus = false;
         checked_button.valign = Gtk.Align.CENTER;
         checked_button.halign = Gtk.Align.CENTER;
-        checked_button.get_style_context ().add_class ("checklist-border");
-        checked_button.get_style_context ().add_class ("checklist-check");
 
         content_label = new Gtk.Label (item.content);
         content_label.halign = Gtk.Align.START;
         content_label.valign = Gtk.Align.CENTER;
         content_label.set_ellipsize (Pango.EllipsizeMode.END);
+        content_label.use_markup = true;
 
-        content_entry = new Gtk.Entry ();
+        content_entry = new Widgets.Entry ();
         content_entry.placeholder_text = _("Task name");
         content_entry.get_style_context ().add_class ("flat");
         content_entry.get_style_context ().add_class ("check-entry");
@@ -71,9 +70,9 @@ public class Widgets.CheckRow : Gtk.ListBoxRow {
 
         content_stack = new Gtk.Stack ();
         content_stack.transition_type = Gtk.StackTransitionType.NONE;
-        content_stack.add_named (content_label, "content_label");
-        content_stack.add_named (content_entry, "content_entry");
-        
+        content_stack.add_named (content_label, "label");
+        content_stack.add_named (content_entry, "entry");
+
         var delete_button = new Gtk.Button.from_icon_name ("window-close-symbolic");
         delete_button.valign = Gtk.Align.CENTER;
         delete_button.can_focus = false;
@@ -129,12 +128,7 @@ public class Widgets.CheckRow : Gtk.ListBoxRow {
 
         add (main_revealer);
         build_drag_and_drop ();
-
-        if (item.checked == 1) {
-            checked_button.active = true;
-        } else {
-            checked_button.active = false;
-        }
+        update_checked ();
 
         handle.enter_notify_event.connect ((event) => {
             delete_revealer.reveal_child = true;
@@ -167,13 +161,14 @@ public class Widgets.CheckRow : Gtk.ListBoxRow {
         });
 
         content_entry.activate.connect (() => {
-            content_stack.visible_child_name = "content_label";
-            // activate (get_index ());
-            // print ("Index: %i\n".printf (get_index ()));
+            content_stack.visible_child_name = "label";
         });
 
         content_entry.focus_out_event.connect (() => {
-            content_stack.visible_child_name = "content_label";
+            content_stack.visible_child_name = "label";
+            content_label.label = Planner.utils.get_markup_format (item.content);
+            tooltip_text = item.content;
+            
             return false;
         });
 
@@ -210,7 +205,7 @@ public class Widgets.CheckRow : Gtk.ListBoxRow {
 
                 Timeout.add (500, () => {
                     destroy ();
-                    return false;
+                    return GLib.Source.REMOVE;
                 });
             }
         });
@@ -244,18 +239,56 @@ public class Widgets.CheckRow : Gtk.ListBoxRow {
                 return false;
             });
         });
+        
+        
+        Planner.database.item_completed.connect ((i) => {
+            if (item.id == i.id) {
+                item.checked = i.checked;
+                update_checked ();
+            }
+        });
+
+        Planner.database.item_uncompleted.connect ((i) => {
+            if (item.id == i.id) {
+                item.checked = i.checked;
+                update_checked ();
+            }
+        });
+
+        Planner.settings.changed.connect ((key) => {
+            if (key == "underline-completed-tasks") {
+                update_checked ();
+            }
+        });
+    }
+
+    private void update_checked () {
+        checked_button.get_style_context ().remove_class ("checklist-completed");
+        checked_button.get_style_context ().remove_class ("checklist-border");
+        checked_button.get_style_context ().remove_class ("checklist-check");
+        content_label.get_style_context ().remove_class ("line-through");
+
+        if (item.checked == 1) {
+            checked_button.get_style_context ().add_class ("checklist-completed");
+            checked_button.active = true;
+
+            if (Planner.settings.get_boolean ("underline-completed-tasks")) {
+                content_label.get_style_context ().add_class ("line-through");
+            }
+        } else {
+            checked_button.active = false;
+            checked_button.get_style_context ().add_class ("checklist-border");
+            checked_button.get_style_context ().add_class ("checklist-check");
+        }
     }
 
     private void save () {
         item.content = content_entry.text;
-        tooltip_text = item.content;
-        content_label.label = item.content;
-
         item.save ();
     }
 
     public void edit () {
-        content_stack.visible_child_name = "content_entry";
+        content_stack.visible_child_name = "entry";
         content_entry.grab_focus_without_selecting ();
         if (content_entry.cursor_position < content_entry.text_length) {
             content_entry.move_cursor (Gtk.MovementStep.BUFFER_ENDS, (int32) content_entry.text_length, false);

@@ -22,11 +22,7 @@
 public class Objects.Project : GLib.Object {
     public int64 area_id { get; set; default = 0; }
     public int64 id { get; set; default = 0; }
-    public string _name = "";
-    public string name {
-        get { return _name; }
-        set { _name = value.replace ("&", " "); }
-    }
+    public string name { get; set; default = ""; }
     public string note { get; set; default = ""; }
     public string due_date { get; set; default = ""; }
 
@@ -42,24 +38,24 @@ public class Objects.Project : GLib.Object {
     public int shared { get; set; default = 0; }
     public int is_kanban { get; set; default = 0; }
     public int show_completed { get; set; default = 0; }
+    public int sort_order { get; set; default = 0; }
 
     private uint timeout_id = 0;
 
     public void save (bool todoist=true) {
         if (timeout_id != 0) {
             Source.remove (timeout_id);
-            timeout_id = 0;
         }
 
         timeout_id = Timeout.add (500, () => {
+            timeout_id = 0;
+
             Planner.database.update_project (this);
             if (is_todoist == 1 && todoist) {
                 Planner.todoist.update_project (this);
             }
 
-            Source.remove (timeout_id);
-            timeout_id = 0;
-            return false;
+            return GLib.Source.REMOVE;
         });
     }
 
@@ -102,8 +98,7 @@ public class Objects.Project : GLib.Object {
     public void share_markdown () {
         Gtk.Clipboard.get_default (Planner.instance.main_window.get_display ()).set_text (to_markdown (), -1);
         Planner.notifications.send_notification (
-            _("The Project was copied to the Clipboard."),
-            "edit-copy-symbolic"
+            _("The Project was copied to the Clipboard.")
         );
     }
 

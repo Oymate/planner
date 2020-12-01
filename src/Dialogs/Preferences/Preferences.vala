@@ -32,17 +32,27 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
         Object (
             view: view,
             transient_for: Planner.instance.main_window,
-            deletable: false,
+            deletable: true,
             resizable: true,
             destroy_with_parent: true,
             window_position: Gtk.WindowPosition.CENTER_ON_PARENT,
-            modal: true
+            modal: true,
+            title: _("Preferences")
         );
     }
 
     construct {
+        get_style_context ().add_class ("app");
+
+        Planner.event_bus.unselect_all ();
         width_request = 525;
         height_request = 600;
+
+        use_header_bar = 1;
+        var header_bar = (Gtk.HeaderBar) get_header_bar ();
+        header_bar.get_style_context ().add_class (Gtk.STYLE_CLASS_FLAT);
+        header_bar.get_style_context ().add_class ("preferences-dialog");
+        header_bar.get_style_context ().add_class ("default-decoration");
 
         stack = new Gtk.Stack ();
         stack.expand = true;
@@ -52,18 +62,19 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
         stack.add_named (get_homepage_widget (), "homepage");
         stack.add_named (get_badge_count_widget (), "badge-count");
         stack.add_named (get_theme_widget (), "theme");
+        stack.add_named (get_task_widget (), "task");
         stack.add_named (get_quick_add_widget (), "quick-add");
+        stack.add_named (get_plugins_widget (), "plugins");
         stack.add_named (get_todoist_widget (), "todoist");
         stack.add_named (get_general_widget (), "general");
         stack.add_named (get_labels_widget (), "labels");
-        stack.add_named (get_keyboard_shortcuts_widget (), "keyboard_shortcuts");
         stack.add_named (get_calendar_widget (), "calendar");
         stack.add_named (get_about_widget (), "about");
         stack.add_named (get_fund_widget (), "fund");
 
         Timeout.add (125, () => {
             stack.visible_child_name = view;
-            return false;
+            return GLib.Source.REMOVE;
         });
 
         var stack_scrolled = new Gtk.ScrolledWindow (null, null);
@@ -72,13 +83,41 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
         stack_scrolled.expand = true;
         stack_scrolled.add (stack);
 
-        get_content_area ().pack_start (stack_scrolled, true, true, 0);
-        add_button (_("Close"), Gtk.ResponseType.CLOSE);
+        var content_area = get_content_area ();
+        content_area.border_width = 0;
+        content_area.add (stack_scrolled);
+
+        // add_button (_("Close"), Gtk.ResponseType.CLOSE);
+        
         Planner.utils.init_labels_color ();
 
         response.connect ((response_id) => {
             destroy ();
         });
+
+        key_press_event.connect ((event) => {
+            if (event.keyval == 65307) {
+                return true;
+            }
+
+            return false;
+        });
+    }
+
+    private Gtk.Widget get_plugins_widget () {
+        var top_box = new Dialogs.Preferences.TopBox ("go-home", _("Plugins"));
+
+        var main_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
+        main_box.expand = true;
+
+        main_box.pack_start (top_box, false, false, 0);
+        main_box.pack_start (Planner.plugins.get_view (), false, true, 0);
+
+        top_box.back_activated.connect (() => {
+            stack.visible_child_name = "home";
+        });
+        
+        return main_box;
     }
 
     private Gtk.Widget get_home_widget () {
@@ -88,8 +127,10 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
 
         var start_page_item = new Dialogs.Preferences.Item ("go-home", _("Homepage"));
         var badge_item = new Dialogs.Preferences.Item ("planner-badge-count", _("Badge Count"));
-        var theme_item = new Dialogs.Preferences.Item ("night-light", _("Theme"));
+        var theme_item = new Dialogs.Preferences.Item ("preferences-color", _("Appearance"));
+        var task_item = new Dialogs.Preferences.Item ("process-completed", _("Task default"));
         var quick_add_item = new Dialogs.Preferences.Item ("planner-quick-add", _("Quick Add"));
+        var backups_item = new Dialogs.Preferences.Item ("drive-harddisk", _("Backups"));
         var general_item = new Dialogs.Preferences.Item ("preferences-system", _("General"), true);
 
         var general_grid = new Gtk.Grid ();
@@ -100,6 +141,8 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
         general_grid.add (start_page_item);
         general_grid.add (badge_item);
         general_grid.add (theme_item);
+        general_grid.add (task_item);
+        general_grid.add (backups_item);
         general_grid.add (quick_add_item);
         general_grid.add (general_item);
         general_grid.add (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
@@ -109,9 +152,16 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
         addons_label.margin_start = 6;
 
         var todoist_item = new Dialogs.Preferences.Item ("planner-todoist", "Todoist");
+        var plugins_item = new Dialogs.Preferences.Item ("extension", "Plugins");
         var calendar_item = new Dialogs.Preferences.Item ("x-office-calendar", _("Calendar Events"));
         var labels_item = new Dialogs.Preferences.Item ("tag", _("Labels"));
         var shortcuts_item = new Dialogs.Preferences.Item ("preferences-desktop-keyboard", _("Keyboard Shortcuts"), true);
+
+        var share_b = new Gtk.Button.with_label (_("Share"));
+        share_b.clicked.connect (() => {
+            var s = new Services.ExportImport ();
+            s.save_file_as ();
+        });
 
         var addons_grid = new Gtk.Grid ();
         addons_grid.margin_top = 18;
@@ -120,6 +170,7 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
         addons_grid.orientation = Gtk.Orientation.VERTICAL;
         addons_grid.add (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
         addons_grid.add (todoist_item);
+        addons_grid.add (plugins_item);
         addons_grid.add (calendar_item);
         addons_grid.add (labels_item);
         addons_grid.add (shortcuts_item);
@@ -164,6 +215,14 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
             stack.visible_child_name = "theme";
         });
 
+        plugins_item.activated.connect (() => {
+            stack.visible_child_name = "plugins";
+        });
+
+        task_item.activated.connect (() => {
+            stack.visible_child_name = "task";
+        });
+
         quick_add_item.activated.connect (() => {
             stack.visible_child_name = "quick-add";
         });
@@ -186,7 +245,11 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
         });
 
         shortcuts_item.activated.connect (() => {
-            stack.visible_child_name = "keyboard_shortcuts";
+            destroy ();
+
+            var dialog = new Dialogs.ShortcutsDialog ();
+            dialog.destroy.connect (Gtk.main_quit);
+            dialog.show_all ();
         });
 
         calendar_item.activated.connect (() => {
@@ -230,12 +293,12 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
         upcoming_radio.get_style_context ().add_class ("preference-item-radio");
 
         if (!Planner.settings.get_boolean ("homepage-project")) {
-            int type = Planner.settings.get_int ("homepage-item");
+            int type = Planner.settings.get_enum ("homepage-item");
             if (type == 0) {
                 inbox_radio.active = true;
             } else if (type == 1) {
                 today_radio.active = true;
-            } else {
+            } else if (type == 2) {
                 upcoming_radio.active = true;
             }
         }
@@ -292,17 +355,107 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
 
         inbox_radio.toggled.connect (() => {
             Planner.settings.set_boolean ("homepage-project", false);
-            Planner.settings.set_int ("homepage-item", 0);
+            Planner.settings.set_enum ("homepage-item", 0);
         });
 
         today_radio.toggled.connect (() => {
             Planner.settings.set_boolean ("homepage-project", false);
-            Planner.settings.set_int ("homepage-item", 1);
+            Planner.settings.set_enum ("homepage-item", 1);
         });
 
         upcoming_radio.toggled.connect (() => {
             Planner.settings.set_boolean ("homepage-project", false);
-            Planner.settings.set_int ("homepage-item", 2);
+            Planner.settings.set_enum ("homepage-item", 2);
+        });
+
+        return main_box;
+    }
+
+    private Gtk.Widget get_task_widget () {
+        var top_box = new Dialogs.Preferences.TopBox ("go-home", _("Task defaults"));
+
+        var description_label = new Gtk.Label (
+            _("When you open up Planner, make sure you see the tasks that are most important. The default homepage is your <b>Inbox</b> view, but you can change it to whatever you'd like.") // vala-lint=line-length
+        );
+        description_label.justify = Gtk.Justification.FILL;
+        description_label.use_markup = true;
+        description_label.wrap = true;
+        description_label.xalign = 0;
+        description_label.margin_bottom = 6;
+        description_label.margin_top = 6;
+        description_label.margin_start = 12;
+        description_label.margin_end = 12;
+
+        var new_tasks_position_switch = new Dialogs.Preferences.ItemSwitch (
+            _("New tasks on top"),
+            Planner.settings.get_enum ("new-tasks-position") == 0
+        );
+        new_tasks_position_switch.margin_top = 12;
+
+        var underline_tasks_switch = new Dialogs.Preferences.ItemSwitch (
+            _("Underline completed tasks."),
+            Planner.settings.get_boolean ("underline-completed-tasks")
+        );
+        underline_tasks_switch.margin_top = 12;
+
+        List<string> list = new List<string> ();
+        list.append (_("Priority 1"));
+        list.append (_("Priority 2"));
+        list.append (_("Priority 3"));
+        list.append (_("None"));
+
+        var default_priority = new Dialogs.Preferences.ItemSelect (
+            _("Default priority"),
+            Planner.settings.get_enum ("default-priority"),
+            list
+        );
+        default_priority.margin_top = 12;
+
+        var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
+        box.margin_top = 6;
+        box.valign = Gtk.Align.START;
+        box.hexpand = true;
+        box.add (description_label);
+        box.add (new_tasks_position_switch);
+        box.add (new Gtk.Label (_("Indicate the position where the new tasks were created.")) {
+            wrap = true,
+            xalign = 0,
+            margin_start = 12,
+            margin_end = 12,
+            justify = Gtk.Justification.FILL
+        });
+        box.add (underline_tasks_switch);
+        box.add (default_priority);
+
+        var box_scrolled = new Gtk.ScrolledWindow (null, null);
+        box_scrolled.hscrollbar_policy = Gtk.PolicyType.NEVER;
+        box_scrolled.expand = true;
+        box_scrolled.add (box);
+
+        var main_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
+        main_box.expand = true;
+
+        main_box.pack_start (top_box, false, false, 0);
+        main_box.pack_start (box_scrolled, false, true, 0);
+
+        top_box.back_activated.connect (() => {
+            stack.visible_child_name = "home";
+        });
+
+        new_tasks_position_switch.activated.connect ((value) => {
+            if (value) {
+                Planner.settings.set_enum ("new-tasks-position", 0);
+            } else {
+                Planner.settings.set_enum ("new-tasks-position", -1);
+            }
+        });
+
+        underline_tasks_switch.activated.connect ((value) => {
+            Planner.settings.set_boolean ("underline-completed-tasks", value);
+        });
+
+        default_priority.activated.connect ((index) => {
+            Planner.settings.set_enum ("default-priority", index);
         });
 
         return main_box;
@@ -382,7 +535,7 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
     }
 
     private Gtk.Widget get_theme_widget () {
-        var info_box = new Dialogs.Preferences.TopBox ("night-light", _("Theme"));
+        var info_box = new Dialogs.Preferences.TopBox ("night-light", _("Appearance"));
 
         var description_label = new Gtk.Label (
             _("Personalize the look and feel of your Planner by choosing the theme that best suits you.")
@@ -396,7 +549,6 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
         description_label.xalign = 0;
 
         var light_radio = new Gtk.RadioButton.with_label (null, _("Light"));
-        light_radio.margin_top = 12;
         light_radio.get_style_context ().add_class ("preference-item-radio");
 
         var night_radio = new Gtk.RadioButton.with_label_from_widget (light_radio, _("Night"));
@@ -408,16 +560,72 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
         var arc_dark_radio = new Gtk.RadioButton.with_label_from_widget (light_radio, _("Arc Dark"));
         arc_dark_radio.get_style_context ().add_class ("preference-item-radio");
 
+        var font_size_scale = new Gtk.Scale.with_range (Gtk.Orientation.HORIZONTAL, 0.5, 2, 0.1);
+        font_size_scale.hexpand = true;
+        font_size_scale.set_value (Planner.settings.get_double ("font-scale"));
+        font_size_scale.add_mark (1, Gtk.PositionType.LEFT, null);
+        font_size_scale.draw_value = false;
+        font_size_scale.margin_top = 3;
+        font_size_scale.margin_bottom = 6;
+
+        var font_size_small = new Gtk.Image ();
+        font_size_small.gicon = new ThemedIcon ("font-x-generic-symbolic");
+        font_size_small.pixel_size = 16;
+        font_size_small.margin_start = 12;
+        
+        var font_size_large = new Gtk.Image ();
+        font_size_large.gicon = new ThemedIcon ("font-x-generic-symbolic");
+        font_size_large.pixel_size = 24;
+        font_size_large.margin_end = 12;
+
+        var font_size_grid = new Gtk.Grid ();
+        font_size_grid.get_style_context ().add_class ("preferences-view");
+        font_size_grid.column_spacing = 12;
+        font_size_grid.hexpand = true;
+        font_size_grid.add (font_size_small);
+        font_size_grid.add (font_size_scale);
+        font_size_grid.add (font_size_large);
+        font_size_grid.valign = Gtk.Align.START;
+
+        List<string> list = new List<string> ();
+        list.append ("elementary");
+        list.append ("Ubuntu");
+        list.append ("Windows");
+        list.append ("macOS");
+        list.append ("Minimize Left");
+        list.append ("Minimize Right");
+        list.append ("Close Only Left");
+        list.append ("Close Only Right");
+
+        var button_layout = new Dialogs.Preferences.ItemSelect (
+            _("Button layout"),
+            Planner.settings.get_enum ("button-layout"),
+            list
+        );
+        button_layout.margin_top = 12;
+       
         var main_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
+        main_box.valign = Gtk.Align.START;
         main_box.expand = true;
 
         main_box.pack_start (info_box, false, false, 0);
         main_box.pack_start (description_label, false, false, 0);
+        main_box.pack_start (new Granite.HeaderLabel (_("Theme")) {
+            margin_start = 12
+        }, false, false, 0);
         main_box.pack_start (light_radio, false, false, 0);
         main_box.pack_start (night_radio, false, false, 0);
         main_box.pack_start (dark_blue_radio, false, false, 0);
         main_box.pack_start (arc_dark_radio, false, false, 0);
         main_box.pack_start (new Gtk.Separator (Gtk.Orientation.HORIZONTAL), false, true, 0);
+        main_box.pack_start (new Granite.HeaderLabel (_("Font Size")) {
+            margin_start = 12,
+            margin_top = 12
+        }, false, false, 0);
+        main_box.pack_start (new Gtk.Separator (Gtk.Orientation.HORIZONTAL), false, true, 0);
+        main_box.pack_start (font_size_grid);
+        main_box.pack_start (new Gtk.Separator (Gtk.Orientation.HORIZONTAL), false, true, 0);
+        main_box.pack_start (button_layout);
 
         if (Planner.settings.get_enum ("appearance") == 0) {
             light_radio.active = true;
@@ -449,6 +657,14 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
             Planner.settings.set_enum ("appearance", 3);
         });
 
+        font_size_scale.value_changed.connect (() => {
+            Planner.settings.set_double ("font-scale", font_size_scale.get_value ());
+        });
+
+        button_layout.activated.connect ((index) => {
+            Planner.settings.set_enum ("button-layout", index);
+        });
+
         return main_box;
     }
 
@@ -456,7 +672,7 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
         var info_box = new Dialogs.Preferences.TopBox ("night-light", _("Quick Add"));
 
         var description_label = new Gtk.Label (
-            _("Don't worry about which app you're using. You can use a keyboard shortcut to open the Quick Add window, where you can enter a pending task and quickly return to work.") // vala-lint=line-length
+            _("Don't worry about which app you're using. You can use a keyboard shortcut to open the Quick Add window, where you can enter a pending task and quickly return to work. You can change the keyboard shortcut whenever you want.") // vala-lint=line-length
         );
         description_label.margin = 6;
         description_label.margin_bottom = 6;
@@ -465,6 +681,9 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
         description_label.justify = Gtk.Justification.FILL;
         description_label.wrap = true;
         description_label.xalign = 0;
+
+        var enabled_switch = new Dialogs.Preferences.ItemSwitch (_("Enabled"), Planner.settings.get_boolean ("quick-add-enabled"));
+        enabled_switch.margin_top = 6;
 
         var shortcut_label = new Gtk.Label (_("Keyboard Shortcuts"));
         shortcut_label.get_style_context ().add_class ("font-weight-600");
@@ -475,10 +694,11 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
         Gtk.accelerator_parse (keys, out accelerator_key, out accelerator_mods);
         var shortcut_hint = Gtk.accelerator_get_label (accelerator_key, accelerator_mods);
 
-        var accels = new ShortcutLabel (shortcut_hint.split ("+"));
+        var accels = new Widgets.ShortcutLabel (shortcut_hint.split ("+"));
         accels.halign = Gtk.Align.END;
 
-        var keybinding_toggle_recording_button = new Gtk.ToggleButton.with_label (_ ("Change"));
+        var keybinding_toggle_recording_button = new Gtk.ToggleButton.with_label (_ ("Press keys…"));
+        keybinding_toggle_recording_button.get_style_context ().add_class ("flat");
         keybinding_toggle_recording_button.valign = Gtk.Align.CENTER;
 
         var shortcut_stack = new Gtk.Stack ();
@@ -500,26 +720,45 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
         shortcut_v_box.get_style_context ().add_class ("preferences-view");
         shortcut_v_box.add (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
         shortcut_v_box.add (shortcut_box);
-        //shortcut_v_box.add (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
 
         var shortcut_eventbox = new Gtk.EventBox ();
         shortcut_eventbox.add (shortcut_v_box);
+
+        var change_button = new Gtk.Button.with_label (_("Change Keyboard Shortcut"));
+        change_button.can_focus = false;
+        change_button.get_style_context ().add_class ("flat");
+        change_button.get_style_context ().add_class ("no-padding");
+        change_button.get_style_context ().add_class ("inbox");
+        change_button.halign = Gtk.Align.END;
+        change_button.margin_end = 6;
 
         var save_last_switch = new Dialogs.Preferences.ItemSwitch (
             _("Save Last Selected Project"),
             Planner.settings.get_boolean ("quick-add-save-last-project")
         );
-        //save_last_switch.margin_top = 6;
+        save_last_switch.margin_top = 6;
+
+        var revealer_box = new Gtk.Grid ();
+        revealer_box.orientation = Gtk.Orientation.VERTICAL;
+        revealer_box.add (shortcut_eventbox);
+        revealer_box.add (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
+        revealer_box.add (change_button);
+        revealer_box.add (save_last_switch);
+
+        var box_revealer = new Gtk.Revealer ();
+        box_revealer.transition_type = Gtk.RevealerTransitionType.CROSSFADE;
+        box_revealer.add (revealer_box);
+        box_revealer.reveal_child = Planner.settings.get_boolean ("quick-add-enabled");
 
         var main_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
         main_box.expand = true;
         main_box.pack_start (info_box, false, false, 0);
         main_box.pack_start (description_label, false, false, 0);
-        main_box.pack_start (shortcut_eventbox, false, false, 0);
-        main_box.pack_start (save_last_switch, false, false, 0);
+        main_box.pack_start (enabled_switch, false, false, 0);
+        main_box.pack_start (box_revealer, false, false, 0);
 
         shortcut_eventbox.enter_notify_event.connect ((event) => {
-            shortcut_stack.visible_child_name = "button";
+            // shortcut_stack.visible_child_name = "button";
             return true;
         });
 
@@ -529,7 +768,7 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
             }
 
             if (keybinding_toggle_recording_button.active == false) {
-                shortcut_stack.visible_child_name = "accels";
+                // shortcut_stack.visible_child_name = "accels";
             }
 
             return true;
@@ -543,14 +782,11 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
             Planner.settings.set_boolean ("quick-add-save-last-project", value);
         });
 
-        keybinding_toggle_recording_button.toggled.connect (() => {
-            if (keybinding_toggle_recording_button.active) {
-                keybinding_toggle_recording_button.label = _ ("Press keys…");
-            } else {
-                keybinding_toggle_recording_button.label = _ ("Change");
-            }
+        change_button.clicked.connect (() => {
+            keybinding_toggle_recording_button.active = true;
+            shortcut_stack.visible_child_name = "button";
         });
-
+        
          // Listen to key events on the window for setting keyboard shortcuts
         this.key_release_event.connect ((event) => {
             if (keybinding_toggle_recording_button.active) {
@@ -570,12 +806,13 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
             }
 
             shortcut_stack.visible_child_name = "accels";
-
             return false;
         });
 
         Planner.settings.changed.connect ((key) => {
-            if (key == "quick-add-shortcut") {
+            if (key == "quick-add-shortcut" || key == "quick-add-enabled") {
+                box_revealer.reveal_child = Planner.settings.get_boolean ("quick-add-enabled");
+
                 string _keys = Planner.settings.get_string ("quick-add-shortcut");
                 uint _accelerator_key;
                 Gdk.ModifierType _accelerator_mods;
@@ -585,8 +822,12 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
                 accels.update_accels (_shortcut_hint.split ("+"));
 
                 // Set shortcut
-                Planner.utils.set_quick_add_shortcut (_keys);
+                Planner.utils.set_quick_add_shortcut (_keys, Planner.settings.get_boolean ("quick-add-enabled"));
             }
+        });
+
+        enabled_switch.activated.connect ((val) => {
+            Planner.settings.set_boolean ("quick-add-enabled", val);
         });
 
         return main_box;
@@ -626,38 +867,35 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
         run_startup_label.margin_start = 12;
         run_startup_label.halign = Gtk.Align.START;
 
-        List<string> list = new List<string> ();
-        list.append ("elementary");
-        list.append ("Ubuntu");
-        list.append ("Windows");
-        list.append ("macOS");
-        list.append ("Minimize Left");
-        list.append ("Minimize Right");
-        list.append ("Close Only Left");
-        list.append ("Close Only Right");
-
-        var button_layout = new Dialogs.Preferences.ItemSelect (
-            _("Button layout"),
-            Planner.settings.get_enum ("button-layout"),
-            list,
-            false
-        );
-        button_layout.margin_top = 12;
-
-        var database_settings = new Dialogs.Preferences.DatabaseSettings ();
-
-        var help_header = new Granite.HeaderLabel (_("Help"));
-        help_header.margin_start = 12;
-        help_header.margin_top = 6;
-
-        var tutorial_item = new Dialogs.Preferences.ItemButton (_("Create tutorial project"), _("Create"));
+        // var database_settings = new Dialogs.Preferences.DatabaseSettings ();
 
         var dz_header = new Granite.HeaderLabel (_("Danger zone"));
+        dz_header.get_style_context ().add_class ("label-danger");
         dz_header.margin_start = 12;
         dz_header.margin_top = 6;
 
+        var database_header = new Granite.HeaderLabel (_("Date & time"));
+        database_header.margin_start = 12;
+        database_header.margin_top = 6;
+
         var clear_db_item = new Dialogs.Preferences.ItemButton (_("Reset all"), _("Reset"));
-        clear_db_item.title_label.get_style_context ().add_class ("label-danger");
+        // var export_db_item = new Dialogs.Preferences.ItemButton (_("Export Database"), _("Export"));
+
+        List<string> week_list = new List<string> ();
+        week_list.append ("Sunday");
+        week_list.append ("Monday");
+        week_list.append ("Tuesday");
+        week_list.append ("Wednesday");
+        week_list.append ("Thursday");
+        week_list.append ("Friday");
+        week_list.append ("Saturday");
+
+        var start_week = new Dialogs.Preferences.ItemSelect (
+            _("Start of the week"),
+            Planner.settings.get_enum ("start-week"),
+            week_list
+        );
+        start_week.margin_top = 12;
 
         var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
         box.expand = true;
@@ -666,11 +904,9 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
         box.pack_start (run_background_label, false, false, 0);
         box.pack_start (run_startup_switch, false, false, 0);
         box.pack_start (run_startup_label, false, false, 0);
-        box.pack_start (button_layout, false, false, 0);
-        box.pack_start (new Gtk.Separator (Gtk.Orientation.HORIZONTAL), false, false, 0);
-        box.pack_start (database_settings, false, false, 0);
-        box.pack_start (help_header, false, false, 0);
-        box.pack_start (tutorial_item, false, false, 0);
+        // box.pack_start (button_layout, false, false, 0);
+        box.pack_start (start_week, false, false, 0);
+        // box.pack_start (export_db_item, false, false, 0);
         box.pack_start (dz_header, false, false, 0);
         box.pack_start (clear_db_item, false, false, 0);
 
@@ -697,23 +933,14 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
             stack.visible_child_name = "home";
         });
 
-        button_layout.activated.connect ((index) => {
-            Planner.settings.set_enum ("button-layout", index);
+        start_week.activated.connect ((index) => {
+            Planner.settings.set_enum ("start-week", index);
         });
 
-        tutorial_item.activated.connect (() => {
-            int64 id = Planner.utils.create_tutorial_project ().id;
-
-            Planner.utils.pane_project_selected (id, 0);
-            Planner.notifications.send_notification (
-                _("Your tutorial project was created"),
-                "emblem-ok-symbolic"
-            );
-
-            Planner.utils.select_pane_project (id);
-
-            destroy ();
-        });
+        //  export_db_item.activated.connect (() => {
+        //      var s = new Services.ExportImport ();
+        //      s.save_file_as ();
+        //  });
 
         clear_db_item.activated.connect (() => {
             var message_dialog = new Granite.MessageDialog.with_image_from_icon_name (
@@ -759,6 +986,11 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
         listbox.get_style_context ().add_class ("background");
         listbox.hexpand = true;
 
+        var box_scrolled = new Gtk.ScrolledWindow (null, null);
+        box_scrolled.hscrollbar_policy = Gtk.PolicyType.NEVER;
+        box_scrolled.expand = true;
+        box_scrolled.add (listbox);
+
         Gtk.drag_dest_set (listbox, Gtk.DestDefaults.ALL, TARGET_ENTRIES_LABELS, Gdk.DragAction.MOVE);
         listbox.drag_data_received.connect ((context, x, y, selection_data, target_type, time) => {
             Widgets.LabelRow target;
@@ -795,20 +1027,14 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
 
         box.pack_start (description_label, false, false, 0);
         box.pack_start (new_label, false, true, 0);
-        box.pack_start (listbox, false, true, 0);
+        box.pack_start (box_scrolled, false, true, 0);
         box.pack_start (new Gtk.Separator (Gtk.Orientation.HORIZONTAL), false, true, 0);
-
-        var box_scrolled = new Gtk.ScrolledWindow (null, null);
-        box_scrolled.hscrollbar_policy = Gtk.PolicyType.NEVER;
-        box_scrolled.expand = true;
-        box_scrolled.add (box);
 
         var main_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 6);
         main_box.expand = true;
 
         main_box.pack_start (top_box, false, false, 0);
-        main_box.pack_start (box_scrolled, false, true, 0);
-
+        main_box.pack_start (box, false, true, 0);
         add_all_labels (listbox, box_scrolled);
 
         Planner.database.label_added.connect ((label) => {
@@ -840,6 +1066,8 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
 
     private void update_label_order (Gtk.ListBox listbox) {
         timeout_id = Timeout.add (150, () => {
+            timeout_id = 0;
+
             new Thread<void*> ("update_label_order", () => {
                 listbox.foreach ((widget) => {
                     var row = (Gtk.ListBoxRow) widget;
@@ -856,66 +1084,9 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
 
                 return null;
             });
-
-            Source.remove (timeout_id);
-            timeout_id = 0;
-
-            return false;
+            
+            return GLib.Source.REMOVE;
         });
-    }
-
-    private Gtk.Widget get_keyboard_shortcuts_widget () {
-        var top_box = new Dialogs.Preferences.TopBox ("tag", _("Keyboard Shortcuts"));
-
-        var description_label = new Gtk.Label (
-            _("All the shortcuts to save you time! Some can be used anywhere in the app, while others only work when adding or editing tasks.") // vala-lint=line-length
-        );
-        description_label.margin = 6;
-        description_label.margin_bottom = 12;
-        description_label.margin_start = 12;
-        description_label.margin_end = 12;
-        description_label.justify = Gtk.Justification.FILL;
-        description_label.wrap = true;
-        description_label.xalign = 0;
-
-        var separator = new Gtk.Separator (Gtk.Orientation.HORIZONTAL);
-        separator.margin_bottom = 1;
-
-        var listbox = new Gtk.ListBox ();
-        listbox.valign = Gtk.Align.START;
-        listbox.activate_on_single_click = true;
-        listbox.selection_mode = Gtk.SelectionMode.SINGLE;
-        listbox.expand = true;
-
-        var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
-        box.hexpand = true;
-
-        foreach (var shortcut in Planner.utils.get_shortcuts ()) {
-            var row = new ShortcutRow (shortcut.name, shortcut.accels);
-            listbox.add (row);
-            listbox.show_all ();
-        }
-
-        box.pack_start (description_label, false, false, 0);
-        box.pack_start (separator, false, true, 0);
-        box.pack_start (listbox, false, true, 0);
-
-        var box_scrolled = new Gtk.ScrolledWindow (null, null);
-        box_scrolled.hscrollbar_policy = Gtk.PolicyType.NEVER;
-        box_scrolled.expand = true;
-        box_scrolled.add (box);
-
-        var main_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 6);
-        main_box.expand = true;
-
-        main_box.pack_start (top_box, false, false, 0);
-        main_box.pack_start (box_scrolled, false, true, 0);
-
-        top_box.back_activated.connect (() => {
-            stack.visible_child_name = "home";
-        });
-
-        return main_box;
     }
 
     private Gtk.Widget get_todoist_widget () {
@@ -1245,6 +1416,7 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
         version_label.get_style_context ().add_class ("dim-label");
 
         var web_item = new Dialogs.Preferences.Item ("web-browser", _("Website"));
+        var github_item = new Dialogs.Preferences.Item ("github", _("Github"));
         var twitter_item = new Dialogs.Preferences.Item ("online-account-twitter", _("Follow"));
         var issue_item = new Dialogs.Preferences.Item ("bug", _("Report a Problem"));
         var translation_item = new Dialogs.Preferences.Item ("config-language", _("Suggest Translations"), true);
@@ -1256,6 +1428,7 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
         grid.orientation = Gtk.Orientation.VERTICAL;
         grid.add (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
         grid.add (web_item);
+        grid.add (github_item);
         grid.add (twitter_item);
         grid.add (issue_item);
         grid.add (translation_item);
@@ -1277,6 +1450,14 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
         web_item.activated.connect (() => {
             try {
                 AppInfo.launch_default_for_uri ("https://planner-todo.web.app", null);
+            } catch (Error e) {
+                warning ("%s\n", e.message);
+            }
+        });
+
+        github_item.activated.connect (() => {
+            try {
+                AppInfo.launch_default_for_uri ("https://github.com/alainm23/planner", null);
             } catch (Error e) {
                 warning ("%s\n", e.message);
             }
@@ -1326,69 +1507,6 @@ public class Dialogs.Preferences.Preferences : Gtk.Dialog {
 public class PreferenceItemRadio : Gtk.RadioButton {
     public PreferenceItemRadio () {
         get_style_context ().add_class ("preferences-view");
-    }
-}
-
-public class ShortcutLabel : Gtk.Grid {
-    public string[] accels { get; construct; }
-
-    public ShortcutLabel (string[] accels) {
-        Object (accels: accels);
-    }
-
-    construct {
-        valign = Gtk.Align.CENTER;
-        column_spacing = 6;
-
-        update_accels (accels);
-    }
-
-    public void update_accels (string[] accels) {
-        foreach (var child in this.get_children ()) {
-            child.destroy ();
-        }
-
-        if (accels[0] != "") {
-            foreach (unowned string accel in accels) {
-                if (accel == "") {
-                    continue;
-                }
-                var label = new Gtk.Label (accel);
-                label.get_style_context ().add_class ("keycap");
-                add (label);
-            }
-        } else {
-            var label = new Gtk.Label (_("Disabled"));
-            label.get_style_context ().add_class (Gtk.STYLE_CLASS_DIM_LABEL);
-            add (label);
-        }
-
-        show_all ();
-    }
-}
-
-public class ShortcutRow : Gtk.ListBoxRow {
-    public ShortcutRow (string name, string[] accels) {
-        var name_label = new Gtk.Label (name);
-        name_label.wrap = true;
-        name_label.xalign = 0;
-        name_label.get_style_context ().add_class ("font-weight-600");
-
-        var shortcuts_labels = new ShortcutLabel (accels);
-
-        var box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
-        box.margin_start = 12;
-        box.margin_top = 3;
-        box.margin_bottom = 3;
-        box.margin_end = 6;
-        box.pack_start (name_label, false, true, 0);
-        box.pack_end (shortcuts_labels, false, false, 0);
-
-        var main_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
-        main_box.pack_start (box);
-        main_box.pack_start (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
-
-        add (main_box);
     }
 }
 

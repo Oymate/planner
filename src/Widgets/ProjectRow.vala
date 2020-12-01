@@ -21,7 +21,8 @@
 
 public class Widgets.ProjectRow : Gtk.ListBoxRow {
     public Objects.Project project { get; construct; }
-
+    public Gtk.ScrolledWindow scrolled { get; set; }
+    
     private Widgets.ProjectProgress project_progress;
     private Gtk.Label name_label;
     private Gtk.Label count_label;
@@ -35,10 +36,22 @@ public class Widgets.ProjectRow : Gtk.ListBoxRow {
     private Gtk.EventBox handle;
 
     private Gtk.Revealer motion_revealer;
+    private Gtk.Revealer first_motion_revealer;
     public Gtk.Revealer main_revealer;
+    private Gtk.Label due_label;
 
     private int count = 0;
     private uint timeout_id = 0;
+
+    private bool scroll_up = false;
+    private bool scrolling = false;
+    private bool should_scroll = false;
+    public Gtk.Adjustment vadjustment;
+    private Gtk.Revealer menu_revealer;
+    private Gtk.Revealer due_revealer;
+    private const int SCROLL_STEP_SIZE = 5;
+    private const int SCROLL_DISTANCE = 30;
+    private const int SCROLL_DELAY = 50;
 
     private const Gtk.TargetEntry[] TARGET_ENTRIES = {
         {"PROJECTROW", Gtk.TargetFlags.SAME_APP, 0}
@@ -119,6 +132,11 @@ public class Widgets.ProjectRow : Gtk.ListBoxRow {
         menu_stack.add_named (count_revealer, "count_revealer");
         menu_stack.add_named (menu_button, "menu_button");
 
+        menu_revealer = new Gtk.Revealer ();
+        menu_revealer.transition_type = Gtk.RevealerTransitionType.SLIDE_LEFT;
+        menu_revealer.reveal_child = true;
+        menu_revealer.add (menu_stack);
+
         var source_icon = new Gtk.Image ();
         source_icon.valign = Gtk.Align.CENTER;
         source_icon.get_style_context ().add_class ("dim-label");
@@ -137,6 +155,15 @@ public class Widgets.ProjectRow : Gtk.ListBoxRow {
         source_revealer.transition_type = Gtk.RevealerTransitionType.CROSSFADE;
         source_revealer.add (source_icon);
 
+        due_label = new Gtk.Label (null);
+        due_label.use_markup = true;
+        due_label.valign = Gtk.Align.CENTER;
+        due_label.get_style_context ().add_class ("pane-due-button");
+
+        due_revealer = new Gtk.Revealer ();
+        due_revealer.transition_type = Gtk.RevealerTransitionType.SLIDE_LEFT;
+        due_revealer.add (due_label);
+
         var handle_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0);
         handle_box.hexpand = true;
         handle_box.margin_start = 5;
@@ -144,7 +171,8 @@ public class Widgets.ProjectRow : Gtk.ListBoxRow {
         handle_box.pack_start (progress_grid, false, false, 0);
         handle_box.pack_start (name_label, false, false, 0);
         handle_box.pack_start (source_revealer, false, false, 0);
-        handle_box.pack_end (menu_stack, false, false, 0);
+        handle_box.pack_end (menu_revealer, false, false, 0);
+        handle_box.pack_end (due_revealer, false, false, 0);
 
         var motion_grid = new Gtk.Grid ();
         motion_grid.get_style_context ().add_class ("grid-motion");
@@ -155,9 +183,21 @@ public class Widgets.ProjectRow : Gtk.ListBoxRow {
         motion_revealer.transition_type = Gtk.RevealerTransitionType.SLIDE_DOWN;
         motion_revealer.add (motion_grid);
 
+        var first_motion_grid = new Gtk.Grid ();
+        first_motion_grid.get_style_context ().add_class ("grid-motion");
+        first_motion_grid.height_request = 24;
+        first_motion_grid.hexpand = true;
+        first_motion_grid.margin_bottom = 6;
+        first_motion_grid.margin_top = 6;
+
+        first_motion_revealer = new Gtk.Revealer ();
+        first_motion_revealer.transition_type = Gtk.RevealerTransitionType.SLIDE_DOWN;
+        first_motion_revealer.add (first_motion_grid);
+
         var grid = new Gtk.Grid ();
         grid.orientation = Gtk.Orientation.VERTICAL;
         grid.margin_top = grid.margin_bottom = 2;
+        grid.add (first_motion_revealer);
         grid.add (handle_box);
         grid.add (motion_revealer);
 
@@ -174,6 +214,7 @@ public class Widgets.ProjectRow : Gtk.ListBoxRow {
 
         add (main_revealer);
         apply_color (Planner.utils.get_color (project.color));
+        check_due_date ();
 
         Gtk.drag_source_set (this, Gdk.ModifierType.BUTTON1_MASK, TARGET_ENTRIES, Gdk.DragAction.MOVE);
         drag_begin.connect (on_drag_begin);
@@ -211,17 +252,19 @@ public class Widgets.ProjectRow : Gtk.ListBoxRow {
         menu_button.clicked.connect (() => {
             activate_menu ();
         });
-
+  
         Planner.database.project_updated.connect ((p) => {
             if (project != null && p.id == project.id) {
                 project.name = p.name;
                 project.color = p.color;
                 project.note = p.note;
+                project.due_date = p.due_date;
 
                 name_label.label = p.name;
                 project_progress.progress_fill_color = Planner.utils.get_color (p.color);
 
                 apply_color (Planner.utils.get_color (p.color));
+                check_due_date ();
             }
         });
 
@@ -231,7 +274,7 @@ public class Widgets.ProjectRow : Gtk.ListBoxRow {
 
                 Timeout.add (500, () => {
                     destroy ();
-                    return false;
+                    return GLib.Source.REMOVE;
                 });
             }
         });
@@ -258,6 +301,18 @@ public class Widgets.ProjectRow : Gtk.ListBoxRow {
 
         Planner.database.update_all_bage.connect (() => {
             update_count ();
+        });
+
+        Planner.event_bus.hide_new_window_project.connect ((project_id) => {
+            if (project.id == project_id) {
+                main_revealer.reveal_child = false;
+            }
+        });
+
+        Planner.event_bus.show_new_window_project.connect ((project_id) => {
+            if (project.id == project_id) {
+                main_revealer.reveal_child = true;
+            }
         });
     }
 
@@ -290,10 +345,10 @@ public class Widgets.ProjectRow : Gtk.ListBoxRow {
     private void update_count () {
         if (timeout_id != 0) {
             Source.remove (timeout_id);
-            timeout_id = 0;
         }
 
         timeout_id = Timeout.add (500, () => {
+            timeout_id = 0;
             count = Planner.database.get_count_items_by_project (project.id);
             check_count_label ();
 
@@ -302,10 +357,8 @@ public class Widgets.ProjectRow : Gtk.ListBoxRow {
                 Planner.database.get_count_checked_items_by_project (project.id),
                 Planner.database.get_all_count_items_by_project (project.id)
             );
-
-            Source.remove (timeout_id);
-            timeout_id = 0;
-            return false;
+            
+            return GLib.Source.REMOVE;
         });
     }
 
@@ -352,17 +405,23 @@ public class Widgets.ProjectRow : Gtk.ListBoxRow {
         var row = ((Gtk.Widget[]) selection_data.get_data ())[0];
         source = (Widgets.ItemRow) row;
 
-        Planner.database.move_item (source.item, project.id);
-        if (source.item.is_todoist == 1) {
-            Planner.todoist.move_item (source.item, project.id);
-        }
+        if (source.item.is_todoist == project.is_todoist) {
+            Planner.database.move_item (source.item, project.id);
+            if (source.item.is_todoist == 1) {
+                Planner.todoist.move_item (source.item, project.id);
+            }
 
-        string move_template = _("Task moved to <b>%s</b>");
-        Planner.notifications.send_notification (
-            move_template.printf (
-                Planner.database.get_project_by_id (project.id).name
-            )
-        );
+            string move_template = _("Task moved to <b>%s</b>");
+            Planner.notifications.send_notification (
+                move_template.printf (
+                    Planner.database.get_project_by_id (project.id).name
+                )
+            );
+        } else {
+            Planner.notifications.send_notification (
+                _("Unable to move task")
+            );
+        }
     }
 
     private void on_drag_begin (Gtk.Widget widget, Gdk.DragContext context) {
@@ -406,12 +465,27 @@ public class Widgets.ProjectRow : Gtk.ListBoxRow {
     }
 
     public bool on_drag_motion (Gdk.DragContext context, int x, int y, uint time) {
-        reveal_drag_motion = true;
+        Gtk.Allocation alloc;
+        handle.get_allocation (out alloc);
+        
+        if (get_index () == 0 && project.area_id == 0) {
+            if (y > (alloc.height / 2)) {
+                reveal_drag_motion = true;
+                first_motion_revealer.reveal_child = false;
+            } else {
+                first_motion_revealer.reveal_child = true;
+                reveal_drag_motion = false;
+            }
+        } else {
+            reveal_drag_motion = true;
+        }
+
         return true;
     }
 
     public void on_drag_leave (Gdk.DragContext context, uint time) {
         reveal_drag_motion = false;
+        first_motion_revealer.reveal_child = false;
     }
 
     public bool on_drag_item_motion (Gdk.DragContext context, int x, int y, uint time) {
@@ -426,6 +500,7 @@ public class Widgets.ProjectRow : Gtk.ListBoxRow {
     public void clear_indicator (Gdk.DragContext context) {
         reveal_drag_motion = false;
         main_revealer.reveal_child = true;
+        first_motion_revealer.reveal_child = false;
     }
 
     private void activate_menu () {
@@ -448,7 +523,7 @@ public class Widgets.ProjectRow : Gtk.ListBoxRow {
 
                     Timeout.add (500, () => {
                         destroy ();
-                        return false;
+                        return GLib.Source.REMOVE;
                     });
                 }
             });
@@ -466,7 +541,7 @@ public class Widgets.ProjectRow : Gtk.ListBoxRow {
 
                         Timeout.add (500, () => {
                             destroy ();
-                            return false;
+                            return GLib.Source.REMOVE;
                         });
                     }
                 });
@@ -497,8 +572,8 @@ public class Widgets.ProjectRow : Gtk.ListBoxRow {
             get_style_context ().remove_class ("highlight");
         });
 
-        var edit_menu = new Widgets.ImageMenuItem (_("Edit"), "edit-symbolic");
-
+        var open_menu = new Widgets.ImageMenuItem (_("Open New Window"), "window-new-symbolic");
+        var edit_menu = new Widgets.ImageMenuItem (_("Edit Project"), "edit-symbolic");
         move_area_menu = new Widgets.ImageMenuItem (_("Move"), "move-project-symbolic");
         areas_menu = new Gtk.Menu ();
         move_area_menu.set_submenu (areas_menu);
@@ -514,11 +589,13 @@ public class Widgets.ProjectRow : Gtk.ListBoxRow {
         share_list_menu.add (share_mail);
         share_list_menu.show_all ();
 
-        var duplicate_menu = new Widgets.ImageMenuItem (_("Duplicate"), "edit-copy-symbolic");
+        // var duplicate_menu = new Widgets.ImageMenuItem (_("Duplicate"), "edit-copy-symbolic");
 
         var delete_menu = new Widgets.ImageMenuItem (_("Delete"), "user-trash-symbolic");
         delete_menu.get_style_context ().add_class ("menu-danger");
 
+        menu.add (open_menu);
+        menu.add (new Gtk.SeparatorMenuItem ());
         menu.add (edit_menu);
         menu.add (new Gtk.SeparatorMenuItem ());
         menu.add (move_area_menu);
@@ -529,6 +606,11 @@ public class Widgets.ProjectRow : Gtk.ListBoxRow {
 
         menu.show_all ();
 
+        open_menu.activate.connect (() => {
+            var dialog = new Dialogs.Project (project);
+            dialog.destroy.connect (Gtk.main_quit);
+            dialog.show_all ();
+        });
 
         edit_menu.activate.connect (() => {
             var dialog = new Dialogs.ProjectSettings (project);
@@ -539,7 +621,7 @@ public class Widgets.ProjectRow : Gtk.ListBoxRow {
         delete_menu.activate.connect (() => {
             var message_dialog = new Granite.MessageDialog.with_image_from_icon_name (
                 _("Delete project"),
-                _("Are you sure you want to delete <b>%s</b>?".printf (project.name)),
+                _("Are you sure you want to delete <b>%s</b>?".printf (Planner.utils.get_dialog_text (project.name))),
                 "user-trash-full",
             Gtk.ButtonsType.CANCEL);
 
@@ -567,4 +649,53 @@ public class Widgets.ProjectRow : Gtk.ListBoxRow {
             project.share_markdown ();
         });
     }
+
+    private void check_scroll (int y) {
+        vadjustment = scrolled.vadjustment;
+
+        if (vadjustment == null) {
+            return;
+        }
+
+        double vadjustment_min = vadjustment.value;
+        double vadjustment_max = vadjustment.page_size + vadjustment_min;
+        double show_min = double.max (0, y - SCROLL_DISTANCE);
+        double show_max = double.min (vadjustment.upper, y + SCROLL_DISTANCE);
+
+        if (vadjustment_min > show_min) {
+            should_scroll = true;
+            scroll_up = true;
+        } else if (vadjustment_max < show_max) {
+            should_scroll = true;
+            scroll_up = false;
+        } else {
+            should_scroll = false;
+        }
+    }
+
+    private bool scroll () {
+        if (should_scroll) {
+            if (scroll_up) {
+                vadjustment.value -= SCROLL_STEP_SIZE;
+            } else {
+                vadjustment.value += SCROLL_STEP_SIZE;
+            }
+        } else {
+            scrolling = false;
+        }
+
+        return should_scroll;
+    }
+
+    private void check_due_date () {
+        if (project.due_date == "") {
+            due_revealer.reveal_child = false;
+            menu_revealer.reveal_child = true;
+        } else {
+            due_revealer.reveal_child = true;
+            menu_revealer.reveal_child = false;
+            var due = new GLib.DateTime.from_iso8601 (project.due_date, new GLib.TimeZone.local ());
+            due_label.label = "<small>%s</small>".printf (Planner.utils.get_relative_date_from_date (due));
+        }
+    } 
 }

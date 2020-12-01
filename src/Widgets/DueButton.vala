@@ -24,7 +24,8 @@ public class Widgets.DueButton : Gtk.ToggleButton {
 
     private Gtk.Label due_label;
     private Gtk.Image due_image;
-    private Gtk.Revealer label_revealer;
+    private Gtk.Label time_label;
+    private Gtk.Revealer time_revealer;
 
     private Gtk.Popover popover = null;
 
@@ -32,6 +33,9 @@ public class Widgets.DueButton : Gtk.ToggleButton {
     private Widgets.ModelButton tomorrow_button;
     private Widgets.ModelButton undated_button;
     private Widgets.Calendar.Calendar calendar;
+    private Granite.Widgets.TimePicker time_picker;
+    private Gtk.Revealer time_picker_revealer;
+    private Gtk.Switch time_switch;
     private Gtk.Switch recurring_switch;
     private Gtk.Revealer combobox_revealer;
     private Gtk.ComboBox combobox;
@@ -59,15 +63,17 @@ public class Widgets.DueButton : Gtk.ToggleButton {
         due_image = new Gtk.Image ();
         due_image.valign = Gtk.Align.CENTER;
         due_image.pixel_size = 16;
-        due_image.gicon = new ThemedIcon ("x-office-calendar-symbolic");
 
         due_label = new Gtk.Label (_("Schedule"));
         due_label.use_markup = true;
-        
-        label_revealer = new Gtk.Revealer ();
-        label_revealer.transition_type = Gtk.RevealerTransitionType.SLIDE_LEFT;
-        label_revealer.add (due_label);
-        label_revealer.reveal_child = true;
+
+        time_label = new Gtk.Label (null);
+        time_label.use_markup = true;
+
+        time_revealer = new Gtk.Revealer ();
+        time_revealer.transition_type = Gtk.RevealerTransitionType.SLIDE_LEFT;
+        time_revealer.add (time_label);
+        time_revealer.reveal_child = false;
 
         repeat_image = new Gtk.Image ();
         repeat_image.valign = Gtk.Align.CENTER;
@@ -83,7 +89,8 @@ public class Widgets.DueButton : Gtk.ToggleButton {
         main_grid.halign = Gtk.Align.CENTER;
         main_grid.valign = Gtk.Align.CENTER;
         main_grid.add (due_image);
-        main_grid.add (label_revealer);
+        main_grid.add (due_label);
+        main_grid.add (time_revealer);
         main_grid.add (repeat_revealer);
 
         add (main_grid);
@@ -119,61 +126,71 @@ public class Widgets.DueButton : Gtk.ToggleButton {
                     recurring_switch.active = true;
                 }
 
+                var datetime = new GLib.DateTime.from_iso8601 (item.due_date, new GLib.TimeZone.local ());
+                if (Planner.utils.has_time (datetime)) {
+                    time_picker.time = datetime;
+                    time_switch.active = true;
+                }
+
                 popover.popup ();
             }
         });
 
         update_date_text (item);
+        Planner.settings.changed.connect ((key) => {
+            if (key == "appearance") {
+                update_date_text (item);
+            }
+        });
     }
 
     public void update_date_text (Objects.Item item) {
+        due_label.label = _("Schedule");
+        time_label.label = "";
+        
+        if (Planner.settings.get_enum ("appearance") == 0) {
+            due_image.gicon = new ThemedIcon ("calendar-outline-light");
+        } else {
+            due_image.gicon = new ThemedIcon ("calendar-outline-dark");
+        }
+
+        due_image.get_style_context ().remove_class ("overdue-label");
+        due_image.get_style_context ().remove_class ("today");
+        due_image.get_style_context ().remove_class ("upcoming");
+
+        repeat_revealer.reveal_child = false;
+        time_revealer.reveal_child = false;
+
         if (item.due_date != "") {
-            var date = new GLib.DateTime.from_iso8601 (item.due_date, new GLib.TimeZone.local ());
-            due_label.label = Planner.utils.get_relative_date_from_date (date);
+            var datetime = new GLib.DateTime.from_iso8601 (item.due_date, new GLib.TimeZone.local ());
+            due_label.label = Planner.utils.get_relative_date_from_date (datetime);
 
-            due_image.get_style_context ().remove_class ("today-icon-button");
-            due_image.get_style_context ().remove_class ("upcoming");
+            if (Planner.utils.has_time (datetime)) {
+                time_label.label = datetime.format (Planner.utils.get_default_time_format ());
+                time_revealer.reveal_child = true;
+            }
 
-            due_label.get_style_context ().remove_class ("today-label-button");
-            due_label.get_style_context ().remove_class ("upcoming-label-button");
-
-            repeat_image.get_style_context ().remove_class ("upcoming-label-button");
-
-            if (Planner.utils.is_today (date)) {
+            if (Planner.utils.is_today (datetime)) {
                 due_image.gicon = new ThemedIcon ("help-about-symbolic");
-                due_image.get_style_context ().add_class ("today-icon-button");
-                due_image.pixel_size = 10;
-
-                due_label.get_style_context ().add_class ("today-label-button");
-                repeat_image.get_style_context ().add_class ("today-label-button");
+                due_image.get_style_context ().add_class ("today");
+            } else if (Planner.utils.is_overdue (datetime)) {
+                due_image.gicon = new ThemedIcon ("calendar-overdue");
+                due_image.get_style_context ().add_class ("overdue-label");
             } else {
-                due_image.gicon = new ThemedIcon ("x-office-calendar-symbolic");
-                due_image.get_style_context ().add_class ("upcoming");
-                due_image.pixel_size = 16;
+                if (Planner.settings.get_enum ("appearance") == 0) {
+                    due_image.gicon = new ThemedIcon ("calendar-outline-light");
+                } else {
+                    due_image.gicon = new ThemedIcon ("calendar-outline-dark");
+                }
 
-                due_label.get_style_context ().add_class ("upcoming-label-button");
-                repeat_image.get_style_context ().add_class ("upcoming-label-button");
+                due_image.get_style_context ().add_class ("upcoming");
             }
 
             if (item.due_is_recurring == 1) {
                 repeat_revealer.reveal_child = true;
             } else {
-                repeat_revealer.reveal_child = false;   
+                repeat_revealer.reveal_child = false;
             }
-        } else {
-            due_label.label = _("Schedule");
-            due_image.gicon = new ThemedIcon ("x-office-calendar-symbolic");
-
-            due_image.get_style_context ().remove_class ("today-icon-button");
-            due_image.get_style_context ().remove_class ("upcoming");
-
-            due_label.get_style_context ().remove_class ("today-label-button");
-            due_label.get_style_context ().remove_class ("upcoming-label-button");
-
-            repeat_image.get_style_context ().remove_class ("upcoming-label-button");
-            repeat_image.get_style_context ().remove_class ("today-label-button");
-
-            repeat_revealer.reveal_child = false;
         }
     }
 
@@ -216,8 +233,31 @@ public class Widgets.DueButton : Gtk.ToggleButton {
         undated_button.color = 2;
         undated_button.due_label = true;
 
-        calendar = new Widgets.Calendar.Calendar ();
+        calendar = new Widgets.Calendar.Calendar (true);
         calendar.hexpand = true;
+
+        var time_header = new Gtk.Label (_("Time"));
+        time_header.get_style_context ().add_class ("font-bold");
+
+        time_switch = new Gtk.Switch ();
+        time_switch.get_style_context ().add_class ("active-switch");
+
+        var time_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0);
+        time_box.hexpand = true;
+        time_box.margin_start = 16;
+        time_box.margin_end = 16;
+        time_box.pack_start (time_header, false, false, 0);
+        time_box.pack_end (time_switch, false, false, 0);
+        
+        time_picker = new Granite.Widgets.TimePicker ();
+        time_picker.margin_start = 16;
+        time_picker.margin_end = 16;
+        time_picker.margin_top = 6;
+
+        time_picker_revealer = new Gtk.Revealer ();
+        time_picker_revealer.reveal_child = false;
+        time_picker_revealer.transition_type = Gtk.RevealerTransitionType.SLIDE_UP;
+        time_picker_revealer.add (time_picker);
 
         var recurring_header = new Gtk.Label (_("Repeat"));
         recurring_header.get_style_context ().add_class ("font-bold");
@@ -229,15 +269,15 @@ public class Widgets.DueButton : Gtk.ToggleButton {
         recurring_box.hexpand = true;
         recurring_box.margin_start = 16;
         recurring_box.margin_end = 16;
+        recurring_box.margin_top = 6;
         recurring_box.pack_start (recurring_header, false, false, 0);
         recurring_box.pack_end (recurring_switch, false, false, 0);
 
         liststore = new Gtk.ListStore (2, typeof (int), typeof (string));
         combobox = new Gtk.ComboBox.with_model (liststore);
-        combobox.margin_top = 9;
+        combobox.margin_top = 6;
         combobox.margin_start = 16;
         combobox.margin_end = 16;
-        combobox.margin_bottom = 1;
 
         liststore.append (out e_day_iter);
         liststore.@set (e_day_iter,
@@ -271,6 +311,11 @@ public class Widgets.DueButton : Gtk.ToggleButton {
         combobox_revealer.transition_type = Gtk.RevealerTransitionType.SLIDE_UP;
         combobox_revealer.add (combobox);
 
+        time_switch.notify["active"].connect (() => {
+            time_picker_revealer.reveal_child = time_switch.active;
+            update_duedate ();
+        });
+
         recurring_switch.notify["active"].connect (() => {
             update_duedate ();
         });
@@ -279,22 +324,33 @@ public class Widgets.DueButton : Gtk.ToggleButton {
             update_duedate ();
         });
 
+        time_picker.changed.connect (() => {
+            update_duedate ();
+        });
+
+        //  var flow_box = new Gtk.FlowBox ();
+        //  flow_box.add (today_button);
+        //  flow_box.add (tomorrow_button);
+        //  flow_box.add (undated_button);
+
         var grid = new Gtk.Grid ();
         grid.orientation = Gtk.Orientation.VERTICAL;
         grid.add (today_button);
         grid.add (tomorrow_button);
         grid.add (undated_button);
         grid.add (calendar);
+        grid.add (time_box);
+        grid.add (time_picker_revealer);
         grid.add (recurring_box);
         grid.add (combobox_revealer);
         grid.show_all ();
 
         today_button.clicked.connect (() => {
-            set_due (new GLib.DateTime.now_local ().to_string ());
+            set_due (get_datetime (new GLib.DateTime.now_local ()));
         });
 
         tomorrow_button.clicked.connect (() => {
-            set_due (new GLib.DateTime.now_local ().add_days (1).to_string ());
+            set_due (get_datetime (new GLib.DateTime.now_local ().add_days (1)));
         });
 
         undated_button.clicked.connect (() => {
@@ -303,10 +359,39 @@ public class Widgets.DueButton : Gtk.ToggleButton {
         });
 
         calendar.selection_changed.connect ((date) => {
-            set_due (date.to_string ());
+            set_due (get_datetime (date));
         });
 
         return grid;
+    }
+
+    private string get_datetime (GLib.DateTime date) {
+        GLib.DateTime datetime;
+        if (time_switch.active) {
+            datetime = new GLib.DateTime.local (
+                date.get_year (),
+                date.get_month (),
+                date.get_day_of_month (),
+                time_picker.time.get_hour (),
+                time_picker.time.get_minute (),
+                time_picker.time.get_second ()
+            );
+        } else {
+            datetime = new GLib.DateTime.local (
+                date.get_year (),
+                date.get_month (),
+                date.get_day_of_month (),
+                0,
+                0,
+                0
+            );
+        }
+
+        return datetime.to_string ();
+    }
+
+    private string get_datetime_from_string (string date) {
+        return get_datetime (new GLib.DateTime.from_iso8601 (date, new GLib.TimeZone.local ()));
     }
 
     private void update_duedate () {
@@ -317,12 +402,12 @@ public class Widgets.DueButton : Gtk.ToggleButton {
                 item.due_is_recurring = 1;
                 item.due_string = get_string_selected ();
                 item.due_lang = "en";
-                set_due (new GLib.DateTime.now_local ().to_string ());
+                set_due (get_datetime (new GLib.DateTime.now_local ()));
             } else {
                 item.due_is_recurring = 1;
                 item.due_string = get_string_selected ();
                 item.due_lang = "en";
-                set_due (item.due_date);
+                set_due (get_datetime_from_string (item.due_date));
             }
         } else {
             item.due_is_recurring = 0;
@@ -330,7 +415,7 @@ public class Widgets.DueButton : Gtk.ToggleButton {
             item.due_lang = "";
 
             combobox_revealer.reveal_child = false;
-            set_due (item.due_date);
+            set_due (get_datetime_from_string (item.due_date));
         }
     }
 

@@ -1,12 +1,13 @@
 @define-color base_color white;
 @define-color check_border_color @border_color;
 @define-color projectview_color shade (#FFFFFF, 0.985);
-@define-color pane_color shade (#FFFFFF, 0.96);
-@define-color pane_selected_color shade (#FFFFFF, 0.87);
+@define-color pane_color #F5F6F7;
+@define-color pane_selected_color shade (@bg_color, 0.93);
 @define-color pane_text_color #333333;
 @define-color popover_background @projectview_color;
 @define-color row_selected_color shade (@check_border_color, 0.75);
 @define-color upcoming_color #692fc2;
+@define-color background_new_color #692fc2;
 /*
     Dark theme
 */
@@ -168,6 +169,11 @@ paned.horizontal > separator {
 */
 
 .pane-item {
+    padding-top:.2em;
+    padding-bottom:.2em;
+}
+    
+.pane-row:selected .pane-item {
     font-weight: 600;
 }
 
@@ -203,6 +209,10 @@ paned.horizontal > separator {
 
 .pane-row button {
     background-color: transparent;
+}
+
+.project-row {
+    transition: all 250ms ease-in-out;
 }
 
 .project-row:selected:focus image {
@@ -262,8 +272,8 @@ paned.horizontal > separator {
     background-color: @base_color;
     padding-top: 6px;
     padding-left: 6px;
-    margin-left: 6px;
-    margin-right: 40px;
+    margin-left: 2px;
+    margin-right: 6px;
 }
 
 /*
@@ -314,6 +324,18 @@ paned.horizontal > separator {
     background-color: @base_color;
 }
 
+.preferences-dialog {
+    background-color: @bg_color;
+}
+
+.project-dialog {
+    background-color: @projectview_color;
+}
+
+.project-dialog headerbar {
+    background-color: @projectview_color;
+}
+
 .text-color {
     color: @text_color;
 }
@@ -345,7 +367,7 @@ paned.horizontal > separator {
     border: 1px solid alpha (#000, 0.3);
     box-shadow: 0 3px 1px -2px rgba(0,0,0,.2), 0 2px 2px 0 rgba(0,0,0,.14), 0 1px 5px 0 rgba(0,0,0,.12);
     text-shadow: none;
-    background-color: @base_color;
+    background-color: shade (@base_color, 1.15);
 }
 
 .color-radio radio,
@@ -404,18 +426,14 @@ paned.horizontal > separator {
     -gtk-icon-shadow: 0 1px alpha (#000, 0.3);
 }
 
-.project-textview {
-    padding-bottom: 3px;
-}
-
 .project-textview text {
     background-color: @projectview_color;
     transition: all 250ms ease-in-out;
 }
 
-.project-textview text:focus {
+/* .project-textview text:focus {
     border-bottom: 1px solid #3689e6;
-}
+} */
 
 .note-grid {
     border: 1px solid @menu_separator;
@@ -466,6 +484,10 @@ paned.horizontal > separator {
     color: @text_color;
     border-width: 0px 0px 0px 0px;
     background-color: @base_color;
+}
+
+.entry-no-border {
+    border-width: 0px 0px 0px 0px;
 }
 
 .content-entry:focus {
@@ -526,8 +548,8 @@ paned.horizontal > separator {
         inset 0px -1px 6px -15px #3689e6,
 	inset 0px 0px 0px 1.75px alpha (#3689e6, 0.75);
     color: @text_color;
-    background-color: transparent;
     border-radius: 6px;
+    background-color: alpha (#3689e6, 0.1);
 }
 
 .item-action-button {
@@ -553,7 +575,7 @@ paned.horizontal > separator {
 }
 
 .search-icon {
-    background-color: #333333;
+    background-color: #fa1955;
     color: #fff;
     border-radius: 4px;
     padding: 2px;
@@ -568,6 +590,13 @@ paned.horizontal > separator {
 
 .completed-icon {
     background-color: #25b84c;
+    color: #fff;
+    border-radius: 4px;
+    padding: 2px;
+}
+
+.all-tasks-icon {
+    background-color: #28bca3;
     color: #fff;
     border-radius: 4px;
     padding: 2px;
@@ -688,6 +717,10 @@ paned.horizontal > separator {
     border-radius: 4px;
 }
 
+.check-border check {
+    border-radius: 4px;
+}
+
 .check-eventbox-border {
     border: 1px solid alpha (#3689e6, 0.45);
 }
@@ -736,7 +769,7 @@ paned.horizontal > separator {
 }
 
 .title-label {
-    font-size: 12pt;
+    font-size: 1.3em;
 }
 
 .duedate-upcoming {
@@ -747,13 +780,17 @@ paned.horizontal > separator {
     color: @text_color;
 }
 
-.duedate-expired {
+.overdue {
     color: #fa1955;
     font-weight: bold;
 }
 
+.overdue-label {
+    color: #fa1955;
+}
+
 .badge-expired {
-    background-color: #ed5353;
+    background-color: #fa1955;
     color: #ffffff;
     border-radius: 50px;
 }
@@ -780,7 +817,11 @@ paned.horizontal > separator {
 }
 
 .checklist-check check {
-    border: 1.3px solid #3689e6;
+    border: 1px solid @check_border_color;
+}
+
+.checklist-check check:checked {
+    border-color: shade (#3689e6, 0.9);
 }
 
 .label-row {
@@ -884,12 +925,20 @@ paned.horizontal > separator {
     background-color: @pane_selected_color;
 }
 
+.row-transparent:selected {
+    background-color: transparent;
+}
+
+.row-transparent:selected label {
+    color: @text_color;
+}
+
 .label-select-row:selected label {
     color: @text_color;
 }
 
 .searchitem-row:selected {
-    background-color: @pane_selected_color;
+    background-color: shade (@base_color, 0.87);
     color: @text_color;
 }
 
@@ -917,7 +966,14 @@ paned.horizontal > separator {
     animation: highlight-item 0.7s ease-in-out;
 }
 
+.name-entry {
+    background: shade (@base_color, 1.15)
+}
 .description text {
+    background-color: shade (@base_color, 1.15);
+}
+
+.description-dialog text {
     background-color: @bg_color;
 }
 
@@ -947,16 +1003,24 @@ paned.horizontal > separator {
 }
 
 .close-button {
+    padding: 3px;
+    border: none;
+    border-radius: 100%;
+    color: #fff;
     background-image:
         linear-gradient(
             to bottom,
-            shade(@error_color, 1.3),
-            @error_color
+            @BLACK_300,
+            @BLACK_500
         );
-    border: 1px solid shade(@error_color, 0.9);
-    border-radius: 50%;
-    padding: 3px;
-    color: #fff;
+    box-shadow:
+        inset 0 0 0 1px alpha (#fff, 0.02),
+        inset 0 1px 0 0 alpha (#fff, 0.07),
+        inset 0 -1px 0 0 alpha (#fff, 0.01),
+        0 0 0 1px alpha (#000, 0.7),
+        0 1px 2px alpha (#000, 0.16),
+        0 2px 3px alpha (#000, 0.23);
+    margin: 3px;
 }
 
 .notification-image {
@@ -1034,7 +1098,7 @@ paned.horizontal > separator {
 .priority-1 check {
     border-radius: 4px;
     border-color: @check_border_color;
-    background-color: transparent;
+    background: transparent;
 }
 
 .today-icon-button {
@@ -1065,7 +1129,15 @@ paned.horizontal > separator {
     color: #ff7066;
 }
 
+.priority-1-icon {
+    color: #ff7066;
+}
+
 .priority-2-icon image {
+    color: #ff9a14;
+}
+
+.priority-2-icon {
     color: #ff9a14;
 }
 
@@ -1073,10 +1145,140 @@ paned.horizontal > separator {
     color: #5297ff;
 }
 
+.priority-3-icon {
+    color: #5297ff;
+}
+
 .priority-4-icon image {
+    color: @text_color;
+}
+
+.priority-4-icon {
     color: @text_color;
 }
 
 .header {
     color: #3689e6;
+}
+
+.grid-linked button:last-child {
+    border-radius: 0px 4px 4px 0px;
+}
+
+.grid-linked button:first-child {
+    border-radius: 4px 0px 0px 4px;
+}
+
+.slim-mode-button {
+    border: 1px solid shade (@bg_color, 0.95);
+    padding: 0px;
+    background: @bg_color;
+    border-radius: 4px;
+}
+
+.edit-button {
+    background: transparent;
+    padding: 0px;
+}
+
+@keyframes toggle-animation {
+    0% {
+    	box-shadow: none;
+        background-color: transparent;
+    }
+    50% {
+	    background-color: alpha (#3689e6, 0.094);
+    }
+    100% {
+	    box-shadow: none;   
+        background-color: transparent;
+    }
+}
+
+.toogle-box {
+    border-radius: 6px;
+}
+
+.toogle-box.active {
+    animation: toggle-animation 0.75s ease-in-out;
+}
+
+.pane-due-button {
+    background-color: @pane_selected_color;
+    color: @text_color;
+    padding: 1px 6px 1px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+.release-dialog {
+    background-color: @projectview_color;
+}
+
+.release-dialog headerbar {
+    background-color: @projectview_color;
+}
+
+.release-dialog textview text {
+    background-color: @projectview_color;
+}
+
+.release-dialog textview {
+    background-color: @projectview_color;
+}
+
+.release-dialog entry {
+    background: shade (@projectview_color, 0.98);
+}
+
+.keyboardkey {
+    color: #fff;
+    background: rgba(48,51,54,.85);
+    border-radius: .3em;
+    font-size: 85%;
+    text-shadow: 0 1px @text_shadow_color;
+    padding: 3px 6px 4px;
+    min-width: 12px;
+}
+
+.item-ctrl-selected {
+    background-color: @pane_selected_color;
+    border-radius: 6px;
+}
+
+.multi-select-toolbar-button {
+    background-color: transparent;
+    color: @bg_color;
+}
+
+.multi-select-toolbar-button label {
+    color: @bg_color;
+}
+
+.app-notification spinner {
+    color: @bg_color;
+}
+
+.app-notification.error {
+    background-color: #ff8c82;
+}
+
+.app-notification.error label {
+    color: #7a0000;
+}
+
+.background-transparent {
+    background-color: transparent;
+}
+
+.note-textview {
+    background-color: @projectview_color;
+}
+
+.note-textview text {
+    background: alpha (#3689e6, 0.25);
+}
+
+.line-through {
+    text-decoration: line-through;
 }

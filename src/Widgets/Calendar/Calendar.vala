@@ -50,7 +50,6 @@ public class Widgets.Calendar.Calendar : Gtk.Box {
 
     construct {
         orientation = Gtk.Orientation.VERTICAL;
-        margin = 6;
         margin_start = 9;
         margin_end = 6;
         height_request = 200;
@@ -83,6 +82,13 @@ public class Widgets.Calendar.Calendar : Gtk.Box {
             day_nav = day;
             selection_changed (new DateTime.local (year_nav, month_nav, day_nav, 0, 0, 0));
         });
+
+        Planner.settings.changed.connect ((key) => {
+            if (key == "start-week") {
+                calendar_week.update ();
+                today ();
+            }
+        });
     }
 
     public void next_month () {
@@ -94,10 +100,8 @@ public class Widgets.Calendar.Calendar : Gtk.Box {
         }
 
         var date = new GLib.DateTime.local (year_nav, month_nav, 1, 0, 0, 0);
-
         var firts_week = new DateTime.local (date.get_year (), date.get_month (), 1, 0, 0, 0);
-        int start_day = firts_week.get_day_of_week () - 1;
-
+        int start_day = firts_week.get_day_of_week () - Planner.settings.get_enum ("start-week");
         int max_days = Planner.utils.get_days_of_month (date.get_month (), year_nav);
 
         calendar_view.fill_grid_days (start_day,
@@ -119,12 +123,9 @@ public class Widgets.Calendar.Calendar : Gtk.Box {
         }
 
         var date = new GLib.DateTime.local (year_nav, month_nav, 1, 0, 0, 0);
-
         var firts_week = new DateTime.local (date.get_year (), date.get_month (), 1, 0, 0, 0);
-        int start_day = firts_week.get_day_of_week () - 1;
-
+        int start_day = firts_week.get_day_of_week () - Planner.settings.get_enum ("start-week");
         int max_days = Planner.utils.get_days_of_month (date.get_month (), year_nav);
-
         calendar_view.fill_grid_days (start_day,
                                       max_days,
                                       date.get_day_of_month (),
@@ -145,8 +146,7 @@ public class Widgets.Calendar.Calendar : Gtk.Box {
         day_nav = day;
 
         var firts_week = new DateTime.local (year, month, 1, 0, 0, 0);
-        int start_day = firts_week.get_day_of_week () - 1;
-
+        int start_day = firts_week.get_day_of_week () - Planner.settings.get_enum ("start-week");
         int max_days = Planner.utils.get_days_of_month (current_date.get_month (), year_nav);
 
         calendar_view.fill_grid_days (
@@ -159,7 +159,6 @@ public class Widgets.Calendar.Calendar : Gtk.Box {
         );
 
         calendar_header.date = current_date;
-
         selection_changed (new GLib.DateTime.now_local ());
     }
 }
